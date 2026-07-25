@@ -1,11 +1,11 @@
-# ApplyJobsAgent — Kullanım Kılavuzu
+# job-apply-agent — Kullanım Kılavuzu
 
 Uygulama 7/24 kendi kendine çalışmaz. Drive'daki tabloyu **yalnızca sen terminalden
 başlattığın sürece** izler. Aşağıdaki iki kullanım şeklinden birini seç.
 
 > Her komuttan önce proje klasörüne girmen gerekir:
 > ```bash
-> cd /Users/mac/code/ersinisgor/ApplyJobsAgent
+> cd /Users/mac/code/ersinisgor/job-apply-agent
 > ```
 
 ---
@@ -16,7 +16,7 @@ Terminal açık kaldığı sürece her 60 saniyede bir tabloyu kontrol eder; yen
 girdikçe ~1 dakika içinde otomatik işler (CV No + Match Rate + Google Doc).
 
 ```bash
-cd /Users/mac/code/ersinisgor/ApplyJobsAgent
+cd /Users/mac/code/ersinisgor/job-apply-agent
 ./.venv/bin/python -m src.applyjobs.main
 ```
 
@@ -32,14 +32,14 @@ Birkaç ilanı tabloya ekledikten sonra **bir kez** çalıştır; bekleyen tüm 
 işleyip kapanır.
 
 ```bash
-cd /Users/mac/code/ersinisgor/ApplyJobsAgent
+cd /Users/mac/code/ersinisgor/job-apply-agent
 ./.venv/bin/python scripts/run_once.py
 ```
 
 İşlemeden önce sadece hangi satırların işleneceğini görmek istersen (hiçbir şey yazmaz):
 
 ```bash
-cd /Users/mac/code/ersinisgor/ApplyJobsAgent
+cd /Users/mac/code/ersinisgor/job-apply-agent
 ./.venv/bin/python scripts/run_once.py --dry-run
 ```
 
@@ -48,6 +48,34 @@ Sadece tek bir satırı denemek istersen (örnek: 250. satır):
 ```bash
 ./.venv/bin/python scripts/run_once.py --row 250
 ```
+
+---
+
+## Seçenek C — Var olan bir CV'yi yeniden oluşturma (açıklamalı)
+
+Üretilmiş bir CV'yi beğenmezsen (örn. yanlış projeleri eklemiş) **kaydedilmiş ilan
+açıklamasından** yeniden ürettirirsin — LinkedIn'e tekrar gidilmez. Modele serbest bir
+**açıklama** (`-i`) vererek CV'yi ona göre yeniden şekillendirebilirsin: hangi projeyi
+çıkaracağını, hangisini öne çıkaracağını, neyi vurgulayacağını söylersin.
+
+**Tek bir CV'yi (örnek: 309) açıklamayla yeniden oluştur:**
+```bash
+cd /Users/mac/code/ersinisgor/job-apply-agent
+CLAUDE_MODEL=claude-opus-4-8 CLAUDE_EFFORT=high ./.venv/bin/python scripts/regenerate.py \
+  --from 309 --to 309 \
+  -i "Remove the Library Management System project and feature a .NET project instead"
+```
+
+- **`--from` ve `--to` EŞİT olmalı** (tek CV için). Açıklama aralıktaki **her** CV'ye
+  uygulanır — `--from 309 --to 312` yazarsan aynı açıklama dördüne de uygulanır.
+- **`-i` açıklaması** İngilizce ya da Türkçe olabilir (CV yine İngilizce üretilir).
+- **Dürüstlük kuralı geçerli:** eklenmesini istediğin proje/beceri **gerçek** olmalı
+  (`config/projects.md` veya `config/cv_base.md`'de bulunmalı) — model uydurmaz.
+- Açıklamasız da çalışır (sadece mevcut ayarlarla yeniden üretir): `-i`'yi yazmazsın.
+- `--dry-run` eklersen hangi CV'lerin hedeflendiğini yazar, hiçbir şey üretmez.
+
+> Model/effort'u güçlendirmek için baştaki `CLAUDE_MODEL=... CLAUDE_EFFORT=high` kısmını
+> ekle; yazmazsan `.env`'deki varsayılan kullanılır.
 
 ---
 
@@ -128,7 +156,7 @@ sütunlarını doldurur (sadece boş hücreleri) ve CV üretir.
 
 - **"command not found: python" benzeri hata:** `python` yerine her zaman `./.venv/bin/python`
   yaz (projeye özel Python budur).
-- **Yanlış klasördeyim:** her komuttan önce `cd /Users/mac/code/ersinisgor/ApplyJobsAgent`.
+- **Yanlış klasördeyim:** her komuttan önce `cd /Users/mac/code/ersinisgor/job-apply-agent`.
 - **Bir ilan atlandı:** ilan yayından kalkmış olabilir; o satır işlenmez, diğerleri devam eder.
   İlgili satırın CV No (N) hücresini silip tekrar çalıştırırsan yeniden denenir.
 
@@ -141,14 +169,14 @@ entegre FastAPI servisiyle (Haiku modeli) yapılır.
 
 **1. Tek komutla başlat** (özet API + CV poller birlikte; Ctrl+C ikisini birden durdurur):
 ```bash
-cd /Users/mac/code/ersinisgor/ApplyJobsAgent
+cd /Users/mac/code/ersinisgor/job-apply-agent
 ./scripts/start.sh
 ```
 > Sadece özet API'sini istersen: `./.venv/bin/python scripts/run_summary_api.py`
 
 **2. Extension'ı Chrome'a yükle (yalnızca ilk sefer):**
 - `chrome://extensions` → sağ üstten **Developer mode** aç.
-- **Load unpacked** → `ApplyJobsAgent/extension` klasörünü seç.
+- **Load unpacked** → `job-apply-agent/extension` klasörünü seç.
 
 **3. Kullan:** `https://www.linkedin.com/jobs/` sayfasında bir ilana tıkla → sağ panelde Türkçe özet.
 Başka ilana geçince güncellenir; daha önce baktığın ilana dönünce anında (önbellekten) gelir.

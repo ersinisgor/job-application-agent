@@ -33,8 +33,16 @@ python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 ./.venv/bin/python scripts/run_once.py --limit 1    # process at most 1 (first test)
 ./.venv/bin/python scripts/run_once.py --row 430    # only sheet row 430
 
+# Cover letter for ONE job, on demand (only some applications ask for one)
+./.venv/bin/python scripts/cover_letter.py --cv-no 305             # EN, copies to clipboard
+./.venv/bin/python scripts/cover_letter.py --cv-no 305 --lang tr   # Turkish
+./.venv/bin/python scripts/cover_letter.py --cv-no 305 --force     # regenerate + overwrite
+
 # Regenerate a CV-No range from SAVED job descriptions (no re-scrape); override model per-run
 CLAUDE_MODEL=claude-opus-4-8 CLAUDE_EFFORT=high ./.venv/bin/python scripts/regenerate.py --from 200 --to 219
+# Steer a regeneration with a free-text note (applies to EVERY CV in the range; use an equal
+# --from/--to for a CV-specific edit). Still bound by the honesty contract — no fabricated projects.
+./.venv/bin/python scripts/regenerate.py --from 309 --to 309 -i "Drop the Library Management System project and feature a .NET project instead"
 
 # One-time interactive logins (open a browser, then confirm in terminal)
 ./.venv/bin/python scripts/linkedin_login.py   # -> credentials/linkedin_state.json (scraper guest view; see caveat)
@@ -43,6 +51,18 @@ CLAUDE_MODEL=claude-opus-4-8 CLAUDE_EFFORT=high ./.venv/bin/python scripts/regen
 ```
 
 There is **no test suite and no linter configured**. To sanity-check the extension after edits: `node --check extension/content.js`. The backend cache/scoring logic is verified ad-hoc by importing `src.applyjobs.summary_api` with a stubbed Anthropic client.
+
+**Run this after touching anything the API imports** — it is the cheapest check and the one that actually fails:
+
+```bash
+./.venv/bin/python -c "
+import sys, src.applyjobs.summary_api
+bad = [m for m in sys.modules if 'playwright' in m or m.startswith('docx') or 'pipeline' in m]
+assert not bad, bad
+print('clean')"
+```
+
+The API must never be able to touch LinkedIn (see below). If it lists playwright, find the culprit with `python -X importtime -c "import src.applyjobs.summary_api"`.
 
 **Load the extension:** `chrome://extensions` → Developer mode → Load unpacked → select `extension/`. After changing `extension/*`, click **Reload** there and refresh the LinkedIn tab.
 
@@ -57,7 +77,16 @@ Cross-cutting facts that aren't obvious from any single file:
 - **Per-posting identity / dedup** is the LinkedIn job id parsed from the link (`_job_key`, `.../jobs/view/<id>`), **not** column M — M is a spreadsheet formula, so openpyxl returns the formula text. Each distinct posting yields exactly one CV even if the link appears twice.
 - **`CV_GENERATION` off ("info-only")**: new/imported rows still get their scraped fields (C/F/H/J/L) written and column N set to the marker `"Yok"` — the row is handled once and never retro-generated when the switch flips back on.
 - **`CV_REVIEW`** (default off) adds a second expert-QA Anthropic pass over each draft.
+- **The CV honesty contract (`config/ats_prompt.md`) — the user's rules, do not weaken them.** The CV must be defensible line-by-line in an interview, so an honest lower ATS score always beats a fabricated keyword:
+  1. **EXPERIENCE bullets keep `cv_base.md`'s facts.** A bolded insert may only add *manner* — an adverb/adjective/soft-skill trait describing how something already written was done (`Worked **collaboratively** in Agile sprints`). It may **never** add a new task, responsibility, domain, artifact or outcome, not even as a trailing clause on a real job (STEP 6 rule 4b). Same rule for SELECTED PROJECTS (STEP 8).
+  2. **Hard skills: surface, never invent.** A hard skill required by the posting may be added only if it already appears in `cv_base.md` or `projects.md`. If it is in neither, leave the gap — no `(fundamentals)` hedge (rule 3).
+  3. **Soft skills: insert all** from the posting, woven into Summary / project bullets / Intern / Previous Experience (rule 4) — subject to 1.
+  4. **Bold is a review aid, not formatting.** In the Markdown CV, bold marks *exactly* the diff vs `cv_base.md` (STEP 10). It must never reach the .docx/Doc/PDF: `_strip_md` removes the `**` markers, so the words survive but the emphasis does not. The only bold in the .docx is the template's own (section headers, `Backend:`-style CORE SKILLS labels, `Tech:` lines).
+  - **The check that catches a violation:** strip every bolded span from a bullet; what remains must still support every duty/result the bullet claims, and for EXPERIENCE it must reduce to a `cv_base.md` bullet. This is scriptable — see STEP 12 item 2b, and run it on a sample after touching this prompt.
+  - Known gap: the model can still slip a *purpose clause* through (`…global exception handling **to support efficient troubleshooting**`). That is an inherent property of logging, not a claimed activity, so it is tolerated.
+- **EXPERIENCE bullets: the Markdown and the .docx/PDF now agree** — `build_docx` fills *every* entry's bullets positionally, not just the "Intern" one (until 2026-07-16 `parse_markdown_cv` only collected bullets under a heading containing "intern", so the current job's bullets were silently dropped and the template's frozen text reached the employer instead — the Markdown you reviewed was not what you sent). Entry **titles** are still deliberately not filled: the template's wording is the designed one (it spaces the date as `Jun – Aug 2025` where `cv_base.md` writes `Jun–Aug 2025`), and the model has never altered a title in 109 CVs. `_fill_bullets` grows/shrinks each entry's slots independently — growth clones the entry's last bullet in place, so it can't spill into the next entry or into SELECTED PROJECTS.
 - **CORE SKILLS is the one CV block with a variable line count.** `ats_prompt.md` lets the model drop the `**Frontend:**` line for a pure back-end posting and keep it for anything front-end-facing, so `_fill_core_skills()` grows/shrinks the template's paragraph slots (like the bullet lists) and takes the **bold label from the markdown** — filling only the content, as it used to, silently shifted every line under the template's original label as soon as a line was added or removed.
+- **`regenerate.py --instruction/-i` steers a re-generation.** A free-text note (`-i "drop project X, feature a .NET project"`) is threaded `regenerate.py → regenerate_cv_range → _regenerate_one → generator.generate/review` and injected via the `{{EXTRA_INSTRUCTION}}` placeholder (both `ats_prompt.md` and `ats_review_prompt.md`) as a **"PER-RUN USER OVERRIDE (HIGHEST PRIORITY)"** block at the prompt's end. `generator._extra_instruction_block` renders it — empty note → empty string (poller/plain regenerate unaffected). The block overrides selection/layout defaults but **not the honesty contract** (it tells the model any added project/skill must be real, in `projects.md`/`cv_base.md`). The note applies to **every** CV in `[--from,--to]`, so use an equal `--from/--to` for a CV-specific edit.
 - **Huntr import** (only when `HUNTR_BOARD_URL` is set): `huntr.py` drives the logged-in web app and captures the board JSON. State is a persisted set of handled job keys in `state/huntr_seen.json`; the **first run baselines** (imports nothing) to avoid a backlog dump.
 - **Google Doc export uses OAuth, not the service account** — a service account can't create files in a personal My Drive. The `.docx` (built from `config/cv_template.docx`) is uploaded with a Google-Doc mimeType so Drive converts it, then exported back as a PDF. Failure here is best-effort and never undoes the already-saved Markdown CV.
 
@@ -79,6 +108,24 @@ Cross-cutting facts that aren't obvious from any single file:
   - **`stack_known` (parallel `list[list[bool]]`) is filled by the server, never the model**, and drives the green/red chips in the panel. An option counts as known when EVERY `/`-part of it is in the profile; a group is met when ANY option is known. `_profile_mentions()` matches through spelling variants — a trailing version/`.js` is stripped and `_SYNONYM_GROUPS` equates e.g. `REST API`/`RESTful API`, `React`/`React.js`, `Vector Database`/`pgvector`/`Vector Search`, `MSSQL`/`SQL Server` — because a literal-only match kept flagging skills the candidate clearly has (postings and the model word the same tech differently).
   - **`fit_reason` below the green band (score 1-69) is built in Python, not by the model.** `_annotate_stack()` diffs `stack` against the profile and writes the gaps alone (`"Java, Spring Boot ve Kafka deneyimi yok."`) — the user wants no praise and no "ama adayın stack'i X ağırlıklı" clause when the panel paints the score yellow/red. The model handles `stack` well but not the diff (it called PostgreSQL missing while the CV lists it), and prompt-only fixes kept regressing. The model's own clause survives at 70+, at 0, and when nothing is missing. The 70 threshold mirrors `renderFit` in `content.js` — **change both together**.
   - **Result cache** is keyed by LinkedIn `job_id` (not text — the two page types yield slightly different text), LRU-bounded, and mirrored to `state/summary_cache.json` (survives restart). The file is stamped with `_CACHE_VERSION`: **bump it whenever the scoring rubric (`SYSTEM_PROMPT`), the `JobSummary` schema, or the candidate profile (`cv_base.md` / `projects.md`) changes** so stale scores are dropped on load.
+
+## Cover letters (`cover_letter.py`, `joblookup.py`, `scripts/cover_letter.py`, panel "Mektup")
+
+Only some applications ask for a cover letter, so letters are made **on demand**, never alongside the CV. Both entry points (CLI and the panel button) call `cover_letter.get_or_create()`.
+
+- **The letter is grounded in `cv_<no>.md` + the saved job description + `config/projects.md`.** The CV is primary (it was already tailored to this posting); `projects.md` is there so the letter can name a *specific* verified detail of a project the CV only lists — without it the model could only re-narrate the CV. **The CV honesty contract applies here too** (see `ats_prompt.md` above): rule 5 of `cover_letter_prompt.md` lets the projects list add only *detail* (technologies, architecture, what it does) to the candidate's own projects — never a new employer, duty, metric or date, never a hedge (`"familiar with"`) for a tech that is in neither source, and never a personal project dressed up as employment.
+- **The sign-off is a filled template, not an instruction.** `SIGN_OFFS[lang]` (`cover_letter.py`) is injected into `{{SIGN_OFF}}` and the prompt demands it back character-for-character. The previous prose rule ("Sign off as Ersin Isgor") was intermittently ignored — a letter ending `Best regards,` with no name is one the user pastes unsigned into a form.
+
+- **The file IS the cache.** A letter lives at `cover_letter_<no>_<lang>.md` and its *existence* is the only "already made" record — no cache file, no version stamp, nothing in the sheet. Identity is **(job, language)**, not job: EN and TR are two artifacts, so asking for TR after generating EN must not hand back the EN letter. `--force` / "Yeniden üret" is the only way to regenerate. Never glob `cover_letter_dir` to find a letter — the hand-made legacy files (`cover_letter_117_fs.docx`, up to No. 138) share it.
+- **`summary_api` must never import `pipeline`.** `pipeline` → `scraper` → `playwright` at module scope, and the API process is the one running while the user browses LinkedIn by hand (see "Do not automate the user's LinkedIn session"). That constraint is why `joblookup.py` exists at all: it holds the CV-No/job-id lookups that would otherwise live in `pipeline`, importing only `config` + `sheets`. Guard it with the import-isolation check in the verification section below.
+- **`joblookup.linkedin_job_id()` deliberately duplicates `pipeline._job_key`'s regex.** `_job_key` returns a prefixed `li:<id>` for the poller's dedup and sits behind the Playwright chain; `linkedin_job_id` returns the bare id the extension's `getCurrentJobId()` sends, so nothing translates at the API boundary. Keep the two patterns in sync.
+- **`generator._call_model` is deliberately NOT reused.** It reads `settings.claude_effort`, which would fire adaptive thinking + a 64k `max_tokens` at a 200-word letter. `cover_letter._call_model` is a plain call with **no `temperature`** (Sonnet 5 rejects a non-default temperature/top_p/top_k with a 400) and **`thinking` explicitly disabled** (on Sonnet 5 an omitted `thinking` runs adaptive — the same trap `generator.py:150-155` documents). ~$0.05 per letter (was ~$0.01 before `projects.md` joined the prompt on 2026-07-16 — it is ~13k input tokens on its own).
+- **`CLAUDE_EFFORT` collides with Claude Code's own env var.** Claude Code exports `CLAUDE_EFFORT` (its own reasoning level) into every Bash command, and `load_dotenv()` does not override an existing env var — so the poller/regenerate run from a Claude Code shell silently use *that* effort, not `.env`'s. Unset it before running any CV command from here. Cover letters are immune (they don't read `claude_effort`).
+- **Letters only exist for CV No ≥ 200.** Below that neither `cv_<no>.md` nor `job_description_<no>.md` was kept (legacy `job_description_118_be.docx` naming), so there is nothing to ground a letter in. `get_or_create` checks the CV first and says so.
+- **The relocation sentence reads column G (work mode) + F (city), not H.** H is Full-Time/Contract (employment type). Three branches, mirroring `generator._relocation_instruction`: Remote → no sentence; on-site/hybrid → sentence naming F's city; blank G (~39% of rows) → the city-less base sentence. That last branch matters: on on-site/hybrid rows F is always a real city, but on blank/remote rows it is often "Türkiye"/"EMEA", which would render as a nonsense "(Türkiye)". `ONSITE_WORK_MODES` lives in `generator.py` so both rules share it. Turkish letters get a Turkish sentence with a real dative suffix (`_tr_dative`: İstanbul'a, Ankara'ya, İzmir'e) — a fixed suffix is wrong for most cities.
+- **The bookkeeping header is disk-only.** `_write` stamps `<!-- cv_no: .. | lang: .. | model: .. | date -->` at the top of the file; `get_or_create` returns the body without it, so the clipboard and the panel never carry it into an application form.
+- **`extension/content.js`**: the letter view is guarded by `showingCover` via the shared `bodyLocked()` predicate (the 700ms `maybeUpdate` poll would otherwise clobber it), `ensurePanel()` **must** re-attach cover handlers after a panel rebuild (`buildPanel` restores the body from an HTML string, so its buttons come back as dead markup otherwise), and `maybeUpdate` calls `exitCoverView()` the moment the job changes — a letter left up under another job's header is one the user copies by mistake. Copy is a **separate** click: `navigator.clipboard.writeText` needs a live user activation, which an awaited fetch spends.
+- **API job-id → CV No** goes through a 5-minute `_sheet_snapshot()` (rows + index cached together, so a click costs at most one Drive download of the whole `.xlsx`, ~1-3s). A **miss forces a refresh** before 404ing — the poller may have written the CV No seconds ago — and misses are never cached.
 
 ## Configuration
 

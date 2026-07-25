@@ -235,6 +235,31 @@ Rules:
    description MUST be included by weaving them naturally into appropriate sections (Summary, project
    bullets, Intern, or Previous Experience). Make every soft skill a strong match. Soft skills are
    traits, not claims of tooling, so full coverage here is fine and expected.
+   **BUT a soft skill may only describe HOW the candidate did something already in the profile — never
+   introduce a new thing they did.** See rule 4b; this is where honesty most often breaks.
+4b. **ACTIVITIES, DUTIES and OUTCOMES — never insert (CRITICAL):** Rule 4 permits *adverbs and
+   adjectives*, not new facts. A soft-skill keyword may be expressed ONLY as the **manner** of an
+   activity that is **already written** in the CURRENT CV or PROJECTS LIST. You may NOT add:
+   - a **new task or responsibility** — even to a real job, even as a trailing clause;
+   - a **new domain or artifact** the candidate worked on;
+   - an **outcome, impact or metric** claim.
+   The test: strip every word you bolded. If what remains no longer supports the claim, you invented it.
+   ✅ Allowed (manner of an existing activity):
+      "Developed a .NET 8 microservice" → "**Collaboratively** developed a .NET 8 microservice"
+      "Led on-site teams of up to 40 personnel" → "Led on-site teams of up to 40 personnel**,
+      demonstrating strong communication and organizational skills**"
+   ❌ Forbidden (a new duty appended to a real job — this is fake experience):
+      CV says: "Develop and maintain web applications using WordPress and AI-powered integrations"
+      Posting wants KPI work → "…AI-powered integrations**, tracking performance metrics and KPIs**"
+      The candidate never did that. Leave the bullet alone.
+   ❌ Forbidden (a new duty inside a real bullet):
+      CV says: "Built REST APIs with JWT authentication and validation"
+      → "Built REST APIs with JWT authentication, validation**, and debugging of faulty endpoints**"
+   ❌ Forbidden (an invented outcome): "…**with measurable business impact**",
+      "…**to optimize service performance**", "…**improving delivery speed**".
+   If the posting's core duty is something the candidate has never done, that is a **gap**. Leave it.
+   An honest, lower-scoring CV is the correct outcome — the candidate has to defend every line of this
+   CV in an interview, and a fabricated duty is worse than a missing keyword.
 5. Prioritize (surfacing profile hard skills, and inserting soft skills) by:
    - high frequency
    - high density
@@ -246,8 +271,12 @@ Keywords may be inserted at:
 - middle of sentences
 - end of sentences
 
+…but only within the limits of rules 3, 4 and 4b. Position is free; **content is not**.
+
 Do NOT create fake experience, and do NOT claim any hard skill (language, framework, database, tool)
-the candidate does not actually have in the CURRENT CV or PROJECTS LIST.
+the candidate does not actually have in the CURRENT CV or PROJECTS LIST. "Fake experience" is not only
+an invented job or employer — appending a duty, activity, domain or result the candidate never did to a
+**real** job or project is also fake experience, and is the most common way this goes wrong.
 
 ---
 
@@ -310,6 +339,13 @@ Project descriptions must:
 - use strong action verbs
 - remain truthful to the project description
 - avoid inventing new technologies or metrics
+- **avoid inventing anything else the project did not involve** — no added task, practice, artifact or
+  result. STEP 6 rule 4b applies here in full: a bolded insert may only describe *how* something already
+  in the Projects List was done, never a new thing that was done.
+  ❌ "…containerized services with Docker**, with clear documentation of design decisions**" — the
+  Projects List says nothing about documentation, so this is invented.
+  ❌ "…**following test-driven development**", "…**with comprehensive code reviews**" — same problem.
+  ✅ "…**collaboratively** containerized services with Docker" — manner only.
 
 ---
 
@@ -485,6 +521,13 @@ find, and only then output the corrected version. Verify and fix:
    invented technology (including in CORE SKILLS — no language/framework/database/tool the candidate does
    not have), employer, date, or metric; the junior–mid level is preserved (no senior/leadership/
    architecture-at-scale claims).
+2b. **The strip-the-bold test (do this literally, bullet by bullet):** mentally delete every bolded span
+   from the draft. What remains MUST be the CURRENT CV's own wording, and every duty, activity, domain
+   and result in the finished bullet MUST still be supported by it. If deleting your bold turns
+   "…integrations**, tracking performance metrics and KPIs**" back into "…integrations", then the KPI
+   work was **invented** — remove it. Bold may only add *manner* (adverbs/adjectives/soft-skill traits),
+   never a new thing the candidate did (STEP 6 rule 4b). Run this check on EVERY bullet in EXPERIENCE and
+   SELECTED PROJECTS before you output.
 3. **Structure fidelity:** section headings, `#` levels, `<br>` / `Tech:` lines, `*` bullets and blank
    lines exactly mirror the CURRENT CV. No name/contact header, no `---`, no emojis, no extra sections.
 4. **Project titles** are GitHub Markdown links `#### [Title](https://github.com/...)` using the correct
@@ -589,3 +632,5 @@ Do not change the overall structure unless necessary.
 ## JOB DESCRIPTION
 
 {{JOB_DESCRIPTION}}
+
+{{EXTRA_INSTRUCTION}}

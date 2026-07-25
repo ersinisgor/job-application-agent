@@ -58,3 +58,5 @@ technologies that appear in the Projects List or the base CV.
 
 ## DRAFT CV TO REVIEW AND CORRECT
 {{CV_DRAFT}}
+
+{{EXTRA_INSTRUCTION}}

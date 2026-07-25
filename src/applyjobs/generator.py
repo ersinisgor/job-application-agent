@@ -42,6 +42,11 @@ _EFFORT_LEVELS = {"low", "medium", "high", "max"}
 
 BASE_RELOCATION_SENTENCE = "Open to relocation and on-site or hybrid opportunities."
 
+# Column G (Uzaktan) values that mean the job needs the candidate on location. The
+# sheet's dropdown spells it "Hybrit"; the rest are tolerated spellings. Shared with
+# cover_letter.py so the two relocation rules can't drift apart.
+ONSITE_WORK_MODES = {"on-site", "onsite", "on site", "hybrit", "hybrid"}
+
 
 def _relocation_instruction(work_mode: str, city: str) -> str:
     """Build the SUMMARY closing-sentence rule from the row's work mode and city."""
@@ -52,8 +57,8 @@ def _relocation_instruction(work_mode: str, city: str) -> str:
             "The job is REMOTE. In the SUMMARY, REMOVE the final sentence "
             f'"{BASE_RELOCATION_SENTENCE}" completely and do not replace it with anything.'
         )
-    if wm in ("on-site", "onsite", "on site", "hybrit", "hybrid"):
-        new_sentence = f"Open to relocation({city}) and on-site or hybrid opportunities."
+    if wm in ONSITE_WORK_MODES:
+        new_sentence = f"Open to relocation ({city}) and on-site or hybrid opportunities."
         return (
             f"The job is {work_mode.strip()} (on-site/hybrid). The SUMMARY's final sentence "
             f'MUST read EXACTLY: "{new_sentence}"'
@@ -64,7 +69,36 @@ def _relocation_instruction(work_mode: str, city: str) -> str:
     )
 
 
-def _build_prompt(job_description: str, work_mode: str, city: str) -> str:
+def _extra_instruction_block(instruction: str) -> str:
+    """Render the per-run user override that regenerate.py's --instruction supplies.
+
+    Empty when no instruction is given, so the placeholder disappears cleanly. When set,
+    it is a HIGH-PRIORITY directive for THIS run (which project to drop/feature, emphasis,
+    ordering...), but it deliberately does NOT license fabrication: the honesty contract
+    still holds, so any project/skill it names must be real (in the PROJECTS LIST or the
+    CURRENT CV). This keeps the swap defensible in an interview.
+    """
+    instruction = (instruction or "").strip()
+    if not instruction:
+        return ""
+    return (
+        "---\n\n"
+        "# ⚠️ PER-RUN USER OVERRIDE (HIGHEST PRIORITY)\n\n"
+        "For THIS regeneration only, apply the user's instruction below. It OVERRIDES "
+        "conflicting selection/layout defaults above (e.g. which projects to include, "
+        "their order, what to emphasize).\n\n"
+        "It does NOT override the honesty contract: every project, skill or detail you "
+        "add or keep MUST be real — present in the PROJECTS LIST or the CURRENT CV. If "
+        "the instruction asks for something none of the sources support, follow it only "
+        "as far as the real facts allow and state the gap in your Turkish analysis; never "
+        "fabricate to satisfy it.\n\n"
+        f"USER INSTRUCTION:\n{instruction}\n"
+    )
+
+
+def _build_prompt(
+    job_description: str, work_mode: str, city: str, instruction: str = ""
+) -> str:
     template = ATS_PROMPT_FILE.read_text(encoding="utf-8")
     cv_base = CV_BASE_FILE.read_text(encoding="utf-8")
     projects = PROJECTS_LIST_FILE.read_text(encoding="utf-8")
@@ -73,6 +107,7 @@ def _build_prompt(job_description: str, work_mode: str, city: str) -> str:
         .replace("{{CV_BASE}}", cv_base)
         .replace("{{SUMMARY_RELOCATION_RULE}}", _relocation_instruction(work_mode, city))
         .replace("{{JOB_DESCRIPTION}}", job_description.strip())
+        .replace("{{EXTRA_INSTRUCTION}}", _extra_instruction_block(instruction))
     )
 
 
@@ -173,21 +208,32 @@ def _call_model(prompt: str) -> str:
 
 
 def generate(
-    job_description: str, work_mode: str = "", city: str = ""
+    job_description: str, work_mode: str = "", city: str = "", instruction: str = ""
 ) -> tuple[str, str, float | None]:
-    """Return (full_response, optimized_cv_markdown, match_rate)."""
-    prompt = _build_prompt(job_description, work_mode, city)
+    """Return (full_response, optimized_cv_markdown, match_rate).
+
+    `instruction` is an optional per-run user override (regenerate.py --instruction),
+    woven into the prompt as a high-priority directive that still obeys the honesty
+    contract (see `_extra_instruction_block`).
+    """
+    prompt = _build_prompt(job_description, work_mode, city, instruction)
     logger.info("Requesting CV from %s ...", settings.claude_model)
     full = _call_model(prompt)
     return full, _extract_cv(full), _extract_match_rate(full)
 
 
 def review(
-    job_description: str, cv_draft: str, work_mode: str = "", city: str = ""
+    job_description: str,
+    cv_draft: str,
+    work_mode: str = "",
+    city: str = "",
+    instruction: str = "",
 ) -> tuple[str, str, float | None]:
     """Second expert pass: verify the draft CV against the job and FIX problems.
 
-    Returns (full_review_response, corrected_cv_markdown, final_match_rate).
+    Returns (full_review_response, corrected_cv_markdown, final_match_rate). `instruction`
+    is threaded through so an enabled review pass honors the same per-run override and
+    doesn't "correct" the requested change back out.
     """
     template = ATS_REVIEW_PROMPT_FILE.read_text(encoding="utf-8")
     prompt = (
@@ -196,6 +242,7 @@ def review(
         .replace("{{SUMMARY_RELOCATION_RULE}}", _relocation_instruction(work_mode, city))
         .replace("{{JOB_DESCRIPTION}}", job_description.strip())
         .replace("{{CV_DRAFT}}", cv_draft.strip())
+        .replace("{{EXTRA_INSTRUCTION}}", _extra_instruction_block(instruction))
     )
     logger.info("Reviewing CV (expert QA pass) with %s ...", settings.claude_model)
     full = _call_model(prompt)

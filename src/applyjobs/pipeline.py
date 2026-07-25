@@ -5,7 +5,7 @@ import json
 import logging
 import re
 
-from . import docx_builder, drive_docs, generator, huntr
+from . import docx_builder, drive_docs, generator, huntr, joblookup
 from .reporting import record_duplicate, record_failure
 from .config import (
     HUNTR_SEEN_FILE,
@@ -321,34 +321,30 @@ def _generate_and_save(
     return match_rate, fields, languages
 
 
-def _regenerate_one(cv_no: int, row: Row) -> float | None:
+def _regenerate_one(cv_no: int, row: Row, instruction: str = "") -> float | None:
     """Regenerate a single CV from its SAVED job description (no re-scrape).
 
     The original page text was stored as job_description_<no>.md when the CV was first
     made; re-using it is robust against expired/removed LinkedIn postings and avoids a
     long burst of scraping. Work mode (G) and city (F) come from the sheet row.
+    `instruction` is an optional per-run user override (regenerate.py --instruction).
     Overwrites cv_<no>.md/_analysis/_review, updates the same-named Google Doc, and
     re-downloads its PDF.
     Returns the final match rate (or None).
     """
-    jd_path = settings.job_description_dir / f"job_description_{cv_no}.md"
-    if not jd_path.exists():
-        raise FileNotFoundError(f"Saved job description not found: {jd_path}")
-    job_description = jd_path.read_text(encoding="utf-8").strip()
-    if not job_description:
-        raise ValueError(f"Saved job description is empty: {jd_path}")
+    job_description = joblookup.load_saved_jd(cv_no)
 
     work_mode = row.work_mode  # manual G (often empty -> default relocation sentence)
     city = row.city
     full_response, cv_md, match_rate = generator.generate(
-        job_description, work_mode=work_mode, city=city
+        job_description, work_mode=work_mode, city=city, instruction=instruction
     )
 
     review_full = ""
     if settings.cv_review:
         try:
             review_full, cv_reviewed, reviewed_rate = generator.review(
-                job_description, cv_md, work_mode=work_mode, city=city
+                job_description, cv_md, work_mode=work_mode, city=city, instruction=instruction
             )
             cv_md = cv_reviewed
             if reviewed_rate is not None:
@@ -365,11 +361,17 @@ def _regenerate_one(cv_no: int, row: Row) -> float | None:
     return match_rate
 
 
-def regenerate_cv_range(start: int, end: int, dry_run: bool = False) -> int:
+def regenerate_cv_range(
+    start: int, end: int, dry_run: bool = False, instruction: str = ""
+) -> int:
     """Re-generate CVs whose CV No (column N) is in [start, end], keeping the same
     numbers. Regenerates from each CV's SAVED job description (no re-scrape), overwrites
     cv_<no>.md/_analysis/_review, updates the same-named Google Doc, re-downloads its PDF,
     and refreshes Match Rate (P). Other sheet columns are left untouched.
+
+    `instruction` is an optional free-text override applied to EVERY CV in the range as a
+    high-priority directive (which project to drop/feature, emphasis, ordering). Target a
+    single CV with an equal --from/--to when the instruction is CV-specific.
 
     Uses whatever model/effort the current settings define, so run it with the env
     overridden to pick a stronger model, e.g.:
@@ -378,12 +380,7 @@ def regenerate_cv_range(start: int, end: int, dry_run: bool = False) -> int:
     sheets = SheetsClient()
     rows = sheets.get_rows()
 
-    targets: list[tuple[int, Row]] = []
-    for r in rows:
-        n = SheetsClient._as_int(r.cv_no)
-        if n is not None and start <= n <= end:
-            targets.append((n, r))
-    targets.sort(key=lambda t: t[0])
+    targets = joblookup.targets_in_range(rows, start, end)
 
     if not targets:
         logger.info("No rows with CV No in [%d, %d].", start, end)
@@ -397,6 +394,8 @@ def regenerate_cv_range(start: int, end: int, dry_run: bool = False) -> int:
         settings.claude_effort,
         settings.cv_review,
     )
+    if instruction.strip():
+        logger.info("Applying per-run override instruction to each CV: %s", instruction.strip())
     if dry_run:
         for n, r in targets:
             logger.info("  [DRY] CV %d -> sheet row %d", n, r.number)
@@ -406,7 +405,7 @@ def regenerate_cv_range(start: int, end: int, dry_run: bool = False) -> int:
     for n, row in targets:
         logger.info("Regenerating CV %d (row %d) ...", n, row.number)
         try:
-            match_rate = _regenerate_one(n, row)
+            match_rate = _regenerate_one(n, row, instruction=instruction)
         except Exception as exc:  # noqa: BLE001
             logger.exception("Regeneration failed for CV %d (row %d); skipping.", n, row.number)
             record_failure("regenerate", row=row.number, cv_no=n, link=row.link, error=repr(exc))
