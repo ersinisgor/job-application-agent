@@ -19,7 +19,7 @@ def main() -> None:
 
     huntr_enabled = bool(settings.huntr_board_url)
     log.info(
-        "ApplyJobsAgent started. Polling every %ds | model=%s | CV generation=%s | Huntr=%s | output=%s",
+        "job-apply-agent started. Polling every %ds | model=%s | CV generation=%s | Huntr=%s | output=%s",
         settings.poll_interval,
         settings.claude_model,
         "on" if settings.cv_generation else "OFF (info-only: import + save fields, no CV)",

@@ -88,7 +88,7 @@ def record_failure(
     except OSError:
         logger.exception("Could not write to %s", FAILURES_FILE)
     logger.error("FAILURE [%s] row=%s cv_no=%s: %s", stage, row, cv_no, one_line_error)
-    _notify("ApplyJobsAgent — hata", f"{stage}: row={row} cv_no={cv_no}")
+    _notify("job-apply-agent — hata", f"{stage}: row={row} cv_no={cv_no}")
 
 
 def record_duplicate(link: str, job_key: str, sheet_row: int | None = None) -> None:
@@ -111,6 +111,6 @@ def record_duplicate(link: str, job_key: str, sheet_row: int | None = None) -> N
         "DUPLICATE: job %s already in the sheet (%s) — no CV generated.", job_id, where
     )
     _notify(
-        "ApplyJobsAgent — tekrar ilan",
+        "job-apply-agent — tekrar ilan",
         f"İlan no {job_id} zaten sheet'te ({where}); CV üretilmedi.",
     )

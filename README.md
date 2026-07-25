@@ -1,4 +1,4 @@
-# ApplyJobsAgent
+# job-apply-agent
 
 Google Sheets'teki iş-başvuru listenizi sürekli izleyen ve yeni bir ilan satırı
 girdiğinizde o ilana özel, ATS-optimize **İngilizce CV** üreten bir agent.
@@ -134,6 +134,6 @@ extension'ı (MV3). Özetleme, bu projeye entegre bir FastAPI servisi (`src/appl
 Yalnız özet API'sini çalıştırmak için: `./.venv/bin/python scripts/run_summary_api.py`
 
 **Extension'ı yükle (bir kez):** `chrome://extensions` → Developer mode → **Load unpacked** →
-`ApplyJobsAgent/extension` klasörünü seç. Ardından `https://www.linkedin.com/jobs/` sayfasında bir ilana
+`job-apply-agent/extension` klasörünü seç. Ardından `https://www.linkedin.com/jobs/` sayfasında bir ilana
 tıkla; sağ üstte özet paneli belirir. (Not: extension LinkedIn'e hiçbir istek atmaz; sadece sayfadaki
 metni okuyup localhost:8000'e gönderir.)
