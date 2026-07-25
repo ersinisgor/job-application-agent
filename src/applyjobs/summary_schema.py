@@ -100,3 +100,30 @@ class SummarizeRequest(BaseModel):
         default=False,
         description="If true, ignore the cached summary and recompute, overwriting it.",
     )
+
+
+class CoverLetterRequest(BaseModel):
+    """Request body for the /cover-letter endpoint.
+
+    Carries no job text: the letter is built from the CV and job description already
+    saved on disk when the CV was generated, which is what makes it work after the
+    posting is gone.
+    """
+
+    job_id: str = Field(description="LinkedIn job id; resolved to a CV No via the sheet.")
+    lang: str = Field(default="en", description="Letter language: 'en' or 'tr'.")
+    force: bool = Field(
+        default=False,
+        description="If true, regenerate even if a letter already exists (overwrites it).",
+    )
+
+
+class CoverLetterResponse(BaseModel):
+    """Response body for the /cover-letter endpoint."""
+
+    text: str = Field(description="The cover letter markdown.")
+    cv_no: int = Field(description="CV No the letter belongs to.")
+    lang: str = Field(description="Language the letter was written in.")
+    created: bool = Field(
+        description="True if the model was just called; False if read from disk."
+    )

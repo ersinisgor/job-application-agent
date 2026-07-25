@@ -10,8 +10,14 @@ Run:
     # or: uvicorn src.applyjobs.summary_api:app --port 8000
 
 Endpoints:
-    GET  /health      -> {"status": "ok", "model": ...}
-    POST /summarize   -> JobSummary
+    GET  /health        -> {"status": "ok", "model": ...}
+    POST /summarize     -> JobSummary
+    POST /cover-letter  -> CoverLetterResponse
+
+NOTE: this module must never import pipeline (or scraper/huntr) — they pull in
+Playwright at module scope, and this process is the one that runs while the user is
+browsing LinkedIn by hand (see CLAUDE.md, "Do not automate the user's LinkedIn
+session"). Sheet/file access goes through joblookup + cover_letter, which are clean.
 """
 
 from __future__ import annotations
@@ -19,6 +25,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import time
 from collections import OrderedDict
 from functools import lru_cache
 
@@ -26,8 +33,15 @@ import anthropic
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
+from . import cover_letter, joblookup
 from .config import CV_BASE_FILE, PROJECTS_LIST_FILE, SUMMARY_CACHE_FILE, settings
-from .summary_schema import JobSummary, SummarizeRequest
+from .sheets import SheetsClient
+from .summary_schema import (
+    CoverLetterRequest,
+    CoverLetterResponse,
+    JobSummary,
+    SummarizeRequest,
+)
 
 logger = logging.getLogger("applyjobs.summary")
 
@@ -290,6 +304,56 @@ def _client() -> anthropic.Anthropic:
     return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
+@lru_cache(maxsize=1)
+def _sheets() -> SheetsClient:
+    """The sheet client, built on first use — never at import.
+
+    SheetsClient reads the service-account key in its constructor, so building it at
+    module scope would make importing this module fail wherever credentials are absent
+    (including the stubbed-client checks CLAUDE.md documents).
+    """
+    return SheetsClient()
+
+
+# The sheet rows + their job-id index, refreshed at most this often. Only the cover
+# letter needs them; reading the sheet downloads the whole .xlsx from Drive (~1-3s),
+# far too slow to repeat on every panel click. Rows and index are cached together so
+# resolving a job costs at most ONE download.
+_SHEET_ROWS: list = []
+_JOB_INDEX: dict[str, int] = {}
+_SHEET_AT = 0.0
+_SHEET_TTL = 300.0
+
+
+def _sheet_snapshot(force: bool = False):
+    """(rows, job_id -> cv_no index), re-downloaded when stale or forced."""
+    global _SHEET_ROWS, _JOB_INDEX, _SHEET_AT
+    if force or not _SHEET_ROWS or (time.monotonic() - _SHEET_AT) > _SHEET_TTL:
+        _SHEET_ROWS = _sheets().get_rows()
+        _JOB_INDEX = joblookup.build_job_index(_SHEET_ROWS)
+        _SHEET_AT = time.monotonic()
+        logger.info("sheet snapshot refreshed: %d rows, %d jobs indexed",
+                    len(_SHEET_ROWS), len(_JOB_INDEX))
+    return _SHEET_ROWS, _JOB_INDEX
+
+
+def _resolve_job(job_id: str):
+    """(cv_no, row) for a LinkedIn job id; (None, None) if it has no CV No yet.
+
+    A hit may be served from a stale snapshot — harmless, since a CV No never changes
+    once assigned. A MISS always costs one fresh read before we 404, because the
+    poller may have written the CV No seconds ago. Misses are never cached.
+    """
+    rows, index = _sheet_snapshot()
+    cv_no = index.get(job_id)
+    if cv_no is None:
+        rows, index = _sheet_snapshot(force=True)
+        cv_no = index.get(job_id)
+    if cv_no is None:
+        return None, None
+    return cv_no, joblookup.find_row_for_cv_no(rows, cv_no)
+
+
 def _build_user_message(req: SummarizeRequest) -> str:
     parts: list[str] = []
     if req.title:
@@ -338,10 +402,10 @@ def _extract_json(text: str) -> str:
 # long browsing session can't grow it without limit, and mirrored to disk
 # (SUMMARY_CACHE_FILE) so it survives an API restart.
 _SUMMARY_CACHE: "OrderedDict[str, JobSummary]" = OrderedDict()
-_CACHE_MAX = 1000
+_CACHE_MAX = 3000
 # Bump whenever the scoring rubric (SYSTEM_PROMPT) or JobSummary schema changes, so a
 # stale on-disk cache from the old rules is discarded instead of returning old scores.
-_CACHE_VERSION = 9
+_CACHE_VERSION = 10
 
 
 def _load_cache() -> None:
@@ -468,6 +532,36 @@ def summarize(req: SummarizeRequest) -> JobSummary:
     raise ValueError(f"Model did not return valid JSON: {last_error}")
 
 
+def _http_from(exc: Exception, what: str) -> HTTPException:
+    """Map a model/credential failure onto the HTTP status the panel expects.
+
+    Shared by both endpoints so their error handling can't drift apart. `what` names
+    the operation for the catch-all message.
+    """
+    if isinstance(exc, MissingCredentialsError):
+        return HTTPException(status_code=500, detail=str(exc))
+    if isinstance(exc, anthropic.RateLimitError):
+        return HTTPException(
+            status_code=429,
+            detail="Claude API rate limit hit. Please try again shortly.",
+        )
+    if isinstance(exc, anthropic.AuthenticationError):
+        return HTTPException(
+            status_code=500,
+            detail="Claude API authentication failed (check ANTHROPIC_API_KEY).",
+        )
+    if isinstance(exc, anthropic.APIConnectionError):
+        return HTTPException(
+            status_code=502,
+            detail="Could not reach the Claude API. Check your internet connection.",
+        )
+    if isinstance(exc, anthropic.APIStatusError):
+        logger.exception("Claude API error")
+        return HTTPException(status_code=502, detail=f"Claude API error ({exc.status_code}).")
+    logger.exception("Unexpected error during %s", what)
+    return HTTPException(status_code=500, detail=f"Unexpected error during {what}.")
+
+
 @app.get("/health")
 def health() -> dict[str, str]:
     return {"status": "ok", "model": settings.summary_model}
@@ -480,26 +574,41 @@ def summarize_endpoint(req: SummarizeRequest) -> JobSummary:
 
     try:
         return summarize(req)
-    except MissingCredentialsError as exc:
-        raise HTTPException(status_code=500, detail=str(exc))
-    except anthropic.RateLimitError:
+    except Exception as exc:  # noqa: BLE001 - mapped to a status by _http_from
+        raise _http_from(exc, "summarization")
+
+
+@app.post("/cover-letter", response_model=CoverLetterResponse)
+def cover_letter_endpoint(req: CoverLetterRequest) -> CoverLetterResponse:
+    """Return this posting's cover letter, generating it only if it doesn't exist yet."""
+    if not req.job_id or not req.job_id.strip():
+        raise HTTPException(status_code=422, detail="'job_id' must not be empty.")
+    if req.lang not in cover_letter.LANGS:
         raise HTTPException(
-            status_code=429,
-            detail="Claude API rate limit hit. Please try again shortly.",
+            status_code=422,
+            detail=f"Bilinmeyen dil: {req.lang!r} (geçerli: {', '.join(cover_letter.LANGS)})",
         )
-    except anthropic.AuthenticationError:
+
+    try:
+        cv_no, row = _resolve_job(req.job_id.strip())
+    except FileNotFoundError as exc:  # service account missing
+        logger.exception("Sheet unavailable")
+        raise HTTPException(status_code=500, detail=f"Sheet okunamadı: {exc}")
+
+    if cv_no is None:
         raise HTTPException(
-            status_code=500,
-            detail="Claude API authentication failed (check ANTHROPIC_API_KEY).",
+            status_code=404,
+            detail="Bu ilan için CV No yok — önce CV üretilmeli.",
         )
-    except anthropic.APIConnectionError:
-        raise HTTPException(
-            status_code=502,
-            detail="Could not reach the Claude API. Check your internet connection.",
+
+    try:
+        text, created = cover_letter.get_or_create(
+            cv_no, lang=req.lang, force=req.force, row=row
         )
-    except anthropic.APIStatusError as exc:
-        logger.exception("Claude API error")
-        raise HTTPException(status_code=502, detail=f"Claude API error ({exc.status_code}).")
-    except Exception:  # noqa: BLE001 - wrap unexpected errors as 500
-        logger.exception("Unexpected error during summarization")
-        raise HTTPException(status_code=500, detail="Unexpected error during summarization.")
+    except (FileNotFoundError, ValueError) as exc:
+        # Missing CV / missing saved JD / blank company: all "can't build it", not bugs.
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:  # noqa: BLE001
+        raise _http_from(exc, "cover letter generation")
+
+    return CoverLetterResponse(text=text, cv_no=cv_no, lang=req.lang, created=created)

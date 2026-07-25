@@ -1,13 +1,21 @@
-// Service worker: forwards summary requests from the content script to the Python
-// backend. Doing the fetch here keeps it independent of the LinkedIn page origin and
-// allows CORS-free access via host_permissions.
+// Service worker: forwards requests from the content script to the Python backend.
+// Doing the fetch here keeps it independent of the LinkedIn page origin and allows
+// CORS-free access via host_permissions.
 
-const BACKEND_URL = "http://localhost:8000/summarize";
+const BACKEND_BASE = "http://localhost:8000";
+
+// Message type -> backend path. host_permissions already covers localhost:8000/*,
+// so adding a route needs no manifest change.
+const ROUTES = {
+  SUMMARIZE: "/summarize",
+  COVER_LETTER: "/cover-letter",
+};
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  if (message?.type !== "SUMMARIZE") return false;
+  const path = ROUTES[message?.type];
+  if (!path) return false;
 
-  fetch(BACKEND_URL, {
+  fetch(BACKEND_BASE + path, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(message.payload),

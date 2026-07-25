@@ -73,6 +73,16 @@
   let userClosed = false; // don't reopen if the user closed the panel
   let showingList = false; // panel is showing a marker list instead of a summary
   let listKind = "reviewed"; // which list is shown: "reviewed" or "maybe"
+  let showingCover = false; // panel is showing this job's cover letter
+  let coverJobId = null; // the job the shown letter belongs to (stale guard)
+  let coverLang = "en"; // language of the letter to fetch
+
+  // True while the body belongs to something other than the summary. Every renderer
+  // checks this: LinkedIn mutations drive maybeUpdate() every 700ms, which would
+  // otherwise overwrite the list/letter with a summary or a spinner.
+  function bodyLocked() {
+    return showingList || showingCover;
+  }
 
   // Per-job summary cache: returning to a job shows it instantly.
   const CACHE = new Map(); // jobId -> { summary, description }
@@ -561,6 +571,7 @@
       <div id="jobsum-header">
         <div id="jobsum-actions">
           <button id="jobsum-refresh" type="button" title="Özeti yeniden oluştur" aria-label="Özeti yeniden oluştur">Yenile</button>
+          <button id="jobsum-cover" type="button" title="Bu ilan için cover letter" aria-label="Bu ilan için cover letter">Mektup</button>
           <button id="jobsum-list" type="button" title="İncelenen ilanlar" aria-label="İncelenen ilanlar">Liste</button>
           <button id="jobsum-maybe-list" type="button" title="Olabilir listesi" aria-label="Olabilir listesi">Olabilir</button>
           <button id="jobsum-close" title="Close" aria-label="Close">×</button>
@@ -578,13 +589,14 @@
       panel.remove();
     });
     panel.querySelector("#jobsum-refresh").addEventListener("click", refreshSummary);
+    panel.querySelector("#jobsum-cover").addEventListener("click", () => toggleCover());
     panel
       .querySelector("#jobsum-list")
       .addEventListener("click", () => showList("reviewed"));
     panel
       .querySelector("#jobsum-maybe-list")
       .addEventListener("click", () => showList("maybe"));
-    updateListButtons(panel);
+    updateHeaderButtons(panel);
     return panel;
   }
 
@@ -648,29 +660,40 @@
     });
   }
 
-  // Reflect which list (if any) is active on the two header buttons.
-  function updateListButtons(panelArg) {
+  // Reflect which view is active on the header buttons.
+  function updateHeaderButtons(panelArg) {
     const panel = panelArg || document.getElementById("jobsum-panel");
     if (!panel) return;
     const lb = panel.querySelector("#jobsum-list");
     const mb = panel.querySelector("#jobsum-maybe-list");
+    const cb = panel.querySelector("#jobsum-cover");
     if (lb) lb.classList.toggle("is-active", showingList && listKind === "reviewed");
     if (mb) mb.classList.toggle("is-active", showingList && listKind === "maybe");
+    if (cb) cb.classList.toggle("is-active", showingCover);
+  }
+
+  // Back to the summary view from a list or the cover letter.
+  function backToSummary() {
+    showingList = false;
+    showingCover = false;
+    coverJobId = null;
+    updateHeaderButtons();
+    reviewRenderKey = null;
+    lastJobId = null;
+    scheduleUpdate();
   }
 
   function showList(kind) {
     // Clicking the already-open list closes it and returns to the summary.
     if (showingList && listKind === kind) {
-      showingList = false;
-      updateListButtons();
-      reviewRenderKey = null;
-      lastJobId = null;
-      scheduleUpdate();
+      backToSummary();
       return;
     }
+    showingCover = false; // a list and a letter can't both own the body
+    coverJobId = null;
     showingList = true;
     listKind = kind;
-    updateListButtons();
+    updateHeaderButtons();
     setBody(renderMarkerList(kind));
     attachListHandlers();
   }
@@ -755,7 +778,11 @@
       panel = buildPanel();
       document.documentElement.appendChild(panel);
       console.log(LOG, "panel added");
-      if (showingList) attachListHandlers(); // re-wire list after a rebuild
+      // Re-wire whichever view owns the body. buildPanel restores it from the saved
+      // HTML string, so without this its buttons come back as live-looking dead
+      // markup — the letter's Kopyala would silently do nothing.
+      if (showingList) attachListHandlers();
+      else if (showingCover) attachCoverHandlers();
     }
     return panel;
   }
@@ -768,7 +795,7 @@
   }
 
   function showLoading() {
-    if (showingList) return; // don't clobber the list view
+    if (bodyLocked()) return; // don't clobber the list / letter view
     setBody(
       `<div class="jobsum-loading">
          <span class="jobsum-spinner" aria-hidden="true"></span>
@@ -778,21 +805,21 @@
   }
 
   function showError(message) {
-    if (showingList) return;
+    if (bodyLocked()) return;
     setBody(`<div class="jobsum-status jobsum-error">${escapeHtml(message)}</div>`);
   }
 
   // A job dismissed from the list without ever being summarized. The "already reviewed"
   // banner sits above this; the body only explains why there is nothing to show.
   function showSeenOnly() {
-    if (showingList) return;
+    if (bodyLocked()) return;
     setBody(
       `<div class="jobsum-status">Bu ilanı listeden elemiştin; özet oluşturulmadı.</div>`
     );
   }
 
   function renderSummary(data) {
-    if (showingList) return;
+    if (bodyLocked()) return;
     // Prefer what Claude extracted from the posting; fall back to the DOM
     // selectors (which only match LinkedIn's old UI).
     setHeader(
@@ -923,8 +950,9 @@
 
   // --- Main flow ---
 
-  // Summary call to the backend (only to our own localhost service).
-  function callBackend(payload) {
+  // Call the backend (only our own localhost service). `type` picks the route —
+  // see ROUTES in background.js.
+  function callBackend(type, payload) {
     return new Promise((resolve, reject) => {
       if (!extensionAlive()) {
         reject(new Error("Extension reloaded. Refresh the page."));
@@ -933,7 +961,7 @@
       let sending;
       try {
         sending = chrome.runtime.sendMessage(
-          { type: "SUMMARIZE", payload },
+          { type, payload },
           (response) => {
             if (chrome.runtime.lastError) {
               reject(new Error("Extension messaging error. Reload the page."));
@@ -978,7 +1006,7 @@
   // now (e.g. a cleaner /jobs/view page than the search page it was first cached
   // from), bypassing both caches and overwriting them with the fresh result.
   function refreshSummary() {
-    if (showingList) return; // only meaningful in the summary view
+    if (bodyLocked()) return; // only meaningful in the summary view
     const jobId = lastJobId || getCurrentJobId();
     if (!jobId) return;
     const description = getDescription();
@@ -994,6 +1022,142 @@
     requestSummary(jobId, description, { force: true });
   }
 
+  // --- Cover letter ---------------------------------------------------------
+  // The backend builds the letter from the CV and job description already saved on
+  // disk (keyed by the job's CV No in the sheet), so nothing is scraped here — the
+  // job id is the whole request. It is generated once per (job, language); asking
+  // again just re-reads the file.
+
+  function toggleCover() {
+    if (showingCover) {
+      backToSummary(); // clicking Mektup again closes the letter
+      return;
+    }
+    const jobId = lastJobId || getCurrentJobId();
+    if (!jobId) return;
+    showingList = false;
+    showingCover = true;
+    coverJobId = jobId;
+    updateHeaderButtons();
+    fetchCover({ force: false });
+  }
+
+  // Leave the letter behind when the user moves to another job. A letter belongs to
+  // exactly one posting, and maybeUpdate() blanks the header on a job switch — so a
+  // letter left up would sit under the wrong job's title and get copied by mistake.
+  function exitCoverView() {
+    showingCover = false;
+    coverJobId = null;
+    updateHeaderButtons();
+  }
+
+  function fetchCover(opts) {
+    const jobId = coverJobId;
+    const force = !!(opts && opts.force);
+    setCoverBody(
+      `<div class="jobsum-loading">
+         <span class="jobsum-spinner" aria-hidden="true"></span>
+         <span>${force ? "Mektup yeniden yazılıyor…" : "Mektup hazırlanıyor…"}</span>
+       </div>`
+    );
+    callBackend("COVER_LETTER", { job_id: jobId, lang: coverLang, force })
+      .then((data) => {
+        if (!showingCover || coverJobId !== jobId) return; // user moved on
+        renderCover(data);
+      })
+      .catch((err) => {
+        if (!showingCover || coverJobId !== jobId) return;
+        setCoverBody(
+          `<div class="jobsum-status jobsum-error">${escapeHtml(err.message)}</div>`
+        );
+      });
+  }
+
+  // Write into the body WITHOUT the bodyLocked() guard the summary renderers use —
+  // those exist to stop the summary from clobbering this view, not the reverse.
+  function setCoverBody(html) {
+    lastBodyHtml = html;
+    const panel = ensurePanel();
+    if (!panel) return;
+    panel.querySelector("#jobsum-body").innerHTML = html;
+  }
+
+  function renderCover(data) {
+    const langRow = ["en", "tr"]
+      .map(
+        (l) =>
+          `<button class="jobsum-review-btn${
+            l === coverLang ? " is-active" : ""
+          }" data-cover="lang" data-lang="${l}" type="button">${l.toUpperCase()}</button>`
+      )
+      .join("");
+    setCoverBody(
+      `<div class="jobsum-cover-actions">
+         ${langRow}
+         <button class="jobsum-review-btn" data-cover="copy" type="button">Kopyala</button>
+         <button class="jobsum-review-btn" data-cover="force" type="button">Yeniden üret</button>
+       </div>
+       <div class="jobsum-cover-meta">CV ${data.cv_no} · ${
+        data.created ? "yeni üretildi" : "kayıtlı mektup"
+      }</div>
+       <div class="jobsum-cover-text">${escapeHtml(coverBody(data.text))}</div>`
+    );
+    attachCoverHandlers();
+  }
+
+  // Drop the `<!-- cv_no: ... -->` bookkeeping header the backend writes into the file.
+  function coverBody(text) {
+    return text.replace(/^\s*<!--[^>]*-->\s*/, "").trim();
+  }
+
+  function attachCoverHandlers() {
+    const panel = document.getElementById("jobsum-panel");
+    if (!panel) return;
+    panel.querySelectorAll("[data-cover]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const act = btn.getAttribute("data-cover");
+        if (act === "copy") {
+          // Must run synchronously inside the click: copying after an awaited fetch
+          // spends the user activation and the write is rejected.
+          const text = panel.querySelector(".jobsum-cover-text");
+          copyText(text ? text.textContent : "").then((ok) => {
+            btn.textContent = ok ? "Kopyalandı ✓" : "Kopyalanamadı";
+            setTimeout(() => (btn.textContent = "Kopyala"), 1500);
+          });
+        } else if (act === "force") {
+          fetchCover({ force: true });
+        } else if (act === "lang") {
+          const lang = btn.getAttribute("data-lang");
+          if (lang === coverLang) return;
+          coverLang = lang;
+          fetchCover({ force: false });
+        }
+      });
+    });
+  }
+
+  async function copyText(text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (_) {
+      // Clipboard API can be blocked (permissions policy, no activation) — fall back.
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      ta.style.cssText = "position:fixed;left:-9999px;top:0;";
+      document.documentElement.appendChild(ta);
+      ta.select();
+      let ok = false;
+      try {
+        ok = document.execCommand("copy");
+      } catch (_) {
+        ok = false;
+      }
+      ta.remove();
+      return ok;
+    }
+  }
+
   function requestSummary(jobId, description, opts) {
     const payload = {
       text: description,
@@ -1007,7 +1171,7 @@
     const seq = ++requestSeq;
     console.log(LOG, "requesting summary:", payload.title || "(no title)");
 
-    callBackend(payload)
+    callBackend("SUMMARIZE", payload)
       .then((data) => {
         // A blank summary means the text we scraped was not a real posting. Don't cache
         // it (so a later Yenile / re-open can still succeed once the description loads),
@@ -1085,13 +1249,20 @@
     renderReviewStatus(jobId); // update the panel banner/toggle for this job
     if (!jobId) return;
 
+    // A letter belongs to exactly one posting. Drop the view as soon as the user
+    // moves on — before the branches below blank the header, which would leave the
+    // old letter sitting under the new job's title, ready to be copied by mistake.
+    // Keyed on coverJobId (the letter's own job), so it also covers the seen-only
+    // path below, which returns early.
+    if (showingCover && coverJobId && jobId !== coverJobId) exitCoverView();
+
     // Dismissed from the list without ever being opened: the reviewed banner above is
     // the whole story, so show nothing else and never spend a model call on it. "Yenile"
     // still forces a real summary if the user changes their mind.
     if (isSeenOnly(jobId) && !CACHE.get(jobId)) {
       // Keyed on the job rather than on `lastJobId`, so a dismissal also replaces a
       // "Preparing summary…" or an error left behind by the job we were already on.
-      if (seenOnlyShownFor !== jobId && !showingList) {
+      if (seenOnlyShownFor !== jobId && !bodyLocked()) {
         seenOnlyShownFor = jobId;
         lastJobId = jobId;
         pendingJobId = null;

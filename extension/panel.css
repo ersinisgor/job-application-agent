@@ -314,6 +314,17 @@
   background: #e6f4ea;
 }
 
+/* Selected state for the plain (green) pill — used by the cover letter's EN/TR picker.
+   The --maybe variant defines its own; the base one had none until now. */
+.jobsum-review-btn.is-active {
+  background: #1a7f37;
+  color: #ffffff;
+}
+
+.jobsum-review-btn.is-active:hover {
+  background: #166a2e;
+}
+
 .jobsum-review-btn--undo {
   border-color: #8b949e;
   color: #57606a; /* neutral gray for the undo action */
@@ -374,7 +385,8 @@
 
 #jobsum-list,
 #jobsum-maybe-list,
-#jobsum-refresh {
+#jobsum-refresh,
+#jobsum-cover {
   background: transparent;
   border: 1px solid rgba(255, 255, 255, 0.5);
   color: #ffffff;
@@ -388,7 +400,9 @@
 #jobsum-list.is-active,
 #jobsum-maybe-list:hover,
 #jobsum-maybe-list.is-active,
-#jobsum-refresh:hover {
+#jobsum-refresh:hover,
+#jobsum-cover:hover,
+#jobsum-cover.is-active {
   background: rgba(255, 255, 255, 0.18);
 }
 
@@ -570,4 +584,31 @@
   .jobsum-listhead {
     color: #a9b0b8;
   }
+}
+
+/* --- Cover letter view (body, when "Mektup" is active) -------------------- */
+
+.jobsum-cover-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.jobsum-cover-meta {
+  font-size: 11px;
+  color: #57606a;
+  margin-bottom: 6px;
+}
+
+/* The letter is meant to be read and copied, so keep the model's line breaks and
+   let the user select the text by hand if they'd rather not use "Kopyala". */
+.jobsum-cover-text {
+  white-space: pre-wrap;
+  user-select: text;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #24292f;
+  max-height: 60vh;
+  overflow-y: auto;
 }

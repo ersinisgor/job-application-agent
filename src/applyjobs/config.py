@@ -24,6 +24,7 @@ CV_BASE_FILE = CONFIG_DIR / "cv_base.md"
 PROJECTS_LIST_FILE = CONFIG_DIR / "projects.md"
 ATS_PROMPT_FILE = CONFIG_DIR / "ats_prompt.md"
 ATS_REVIEW_PROMPT_FILE = CONFIG_DIR / "ats_review_prompt.md"
+COVER_LETTER_PROMPT_FILE = CONFIG_DIR / "cover_letter_prompt.md"
 
 # Config asset: the .docx template for the Google Docs output
 CV_TEMPLATE_FILE = CONFIG_DIR / "cv_template.docx"
@@ -79,6 +80,9 @@ class Settings:
     # Model used by the LinkedIn Job Summary API (separate from claude_model, which
     # is used for CV generation). Defaults to Haiku for fast, low-cost summaries.
     summary_model: str
+    # Model used for on-demand cover letters (separate again: the letter is short
+    # prose, so it needs neither the CV's thinking budget nor the summary's Haiku).
+    cover_letter_model: str
     cv_review: bool
     cv_generation: bool
     spreadsheet_id: str
@@ -87,6 +91,7 @@ class Settings:
     output_dir: Path
     analysis_dir: Path
     job_description_dir: Path
+    cover_letter_dir: Path
     resumes_folder_name: str
     resumes_folder_id: str
     huntr_board_url: str
@@ -97,6 +102,10 @@ class Settings:
         default_output = "~/Desktop/İş Arama/Job Applications/2026/CVs"
         default_analysis = "~/Desktop/İş Arama/Job Applications/2026/CV_Analysis"
         default_jd = "~/Desktop/İş Arama/Job Applications/2026/Job Description"
+        # Shares a folder with the hand-made legacy letters (cover_letter_<no>_<be|fs>.docx,
+        # up to No. 138). New files are cover_letter_<no>_<lang>.md — different suffix and
+        # extension, so they coexist. Never glob this directory to find a letter.
+        default_cover = "~/Desktop/İş Arama/Job Applications/2026/Cover Letters"
         return cls(
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
             claude_model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6"),
@@ -104,6 +113,9 @@ class Settings:
             claude_effort=os.getenv("CLAUDE_EFFORT", "none").strip().lower(),
             # Model for the LinkedIn Job Summary API (extension). Haiku by default.
             summary_model=os.getenv("SUMMARY_MODEL", "claude-haiku-4-5"),
+            # Cover letters: Sonnet 5, called WITHOUT temperature (Sonnet 5 rejects a
+            # non-default temperature/top_p/top_k with a 400) — see cover_letter.py.
+            cover_letter_model=os.getenv("COVER_LETTER_MODEL", "claude-sonnet-5"),
             # Second expert QA pass on each CV (OFF by default: the verify/fix
             # checklist is folded into the single generation prompt, STEP 12).
             cv_review=_env_bool("CV_REVIEW", False),
@@ -118,6 +130,7 @@ class Settings:
             output_dir=_expand(os.getenv("OUTPUT_DIR", default_output)),
             analysis_dir=_expand(os.getenv("ANALYSIS_DIR", default_analysis)),
             job_description_dir=_expand(os.getenv("JOB_DESCRIPTION_DIR", default_jd)),
+            cover_letter_dir=_expand(os.getenv("COVER_LETTER_DIR", default_cover)),
             resumes_folder_name=os.getenv("RESUMES_FOLDER_NAME", "Resumes Based on Jobs"),
             resumes_folder_id=os.getenv("RESUMES_FOLDER_ID", ""),
             # Huntr is OFF unless a board URL is provided (feature flag).
@@ -158,6 +171,7 @@ class Settings:
         self.pdf_dir.mkdir(parents=True, exist_ok=True)
         self.analysis_dir.mkdir(parents=True, exist_ok=True)
         self.job_description_dir.mkdir(parents=True, exist_ok=True)
+        self.cover_letter_dir.mkdir(parents=True, exist_ok=True)
         STATE_DIR.mkdir(parents=True, exist_ok=True)
 
 

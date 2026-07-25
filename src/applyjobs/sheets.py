@@ -34,6 +34,7 @@ COLUMNS = list(string.ascii_uppercase[:17])  # A..Q
 COL_BASVURU = "B"
 COL_CITY = "F"       # Yer
 COL_WORK_MODE = "G"  # Uzaktan: Hybrit / On-site / Remote
+COL_COMPANY = "J"
 COL_LINK = "K"
 COL_POZISYON = "L"
 COL_ILAN_NO = "M"
