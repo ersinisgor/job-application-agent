@@ -64,10 +64,10 @@ def parse_markdown_cv(md: str) -> dict:
     section = None
     summary: list[str] = []
     core_skills: list[str] = []
-    intern_bullets: list[str] = []
+    experience: list[dict] = []
     previous_exp: list[str] = []
     projects: list[dict] = []
-    cur_entry_is_intern = False
+    cur_entry: dict | None = None
     cur_project: dict | None = None
 
     for raw in lines:
@@ -76,7 +76,7 @@ def parse_markdown_cv(md: str) -> dict:
         if stripped.startswith("### "):
             section = stripped[4:].strip().upper()
             cur_project = None
-            cur_entry_is_intern = False
+            cur_entry = None
             continue
         if not stripped:
             continue
@@ -94,10 +94,10 @@ def parse_markdown_cv(md: str) -> dict:
 
         elif section == "EXPERIENCE":
             if stripped.startswith("#### "):
-                title = stripped[5:]
-                cur_entry_is_intern = "intern" in title.lower()
-            elif cur_entry_is_intern and stripped.startswith("*"):
-                intern_bullets.append(_strip_md(stripped.lstrip("*").strip()))
+                cur_entry = {"title": _strip_md(stripped[5:]), "bullets": []}
+                experience.append(cur_entry)
+            elif cur_entry is not None and stripped.startswith("*"):
+                cur_entry["bullets"].append(_strip_md(stripped.lstrip("*").strip()))
 
         elif section == "SELECTED PROJECTS":
             if stripped.startswith("#### "):
@@ -116,7 +116,9 @@ def parse_markdown_cv(md: str) -> dict:
     return {
         "summary": " ".join(summary).strip(),
         "core_skills": core_skills,
-        "intern_bullets": intern_bullets,
+        # Every EXPERIENCE entry in document order, each {title, bullets}. All of them
+        # are filled into the template — see build_docx.
+        "experience": experience,
         "projects": projects,
         # The role title is in the heading now, so all collected lines are the description.
         "previous_exp_desc": " ".join(previous_exp).strip(),
@@ -303,20 +305,26 @@ def build_docx(markdown_cv: str) -> bytes:
     paras = doc.paragraphs
     exp_start = _find_header(paras, "EXPERIENCE")
 
-    # --- EXPERIENCE: only the "Intern" entry's bullets are editable ---
+    # --- EXPERIENCE: fill EVERY entry's bullets, positionally ---
+    # Entry titles are deliberately NOT filled: the template's wording is the designed
+    # one (e.g. it spaces the date as "Jun – Aug 2025" where cv_base.md writes
+    # "Jun–Aug 2025"), and across every CV generated so far the markdown's titles match
+    # cv_base.md exactly — so there is nothing to copy over and something to lose.
     proj_start = _find_header(paras, "SELECTED PROJECTS")
-    intern_bullets: list = []
-    in_intern = False
+    entry_slots: list[list] = []  # bullet paragraphs, one list per entry, in order
+    cur_slot: list | None = None
     for p in paras[exp_start + 1: proj_start]:
-        txt = _para_text(p).strip()
-        if not txt:
+        if not _para_text(p).strip():
             continue
-        if not _is_bullet(p):  # an entry title line
-            in_intern = "intern" in txt.lower()
-        elif in_intern:
-            intern_bullets.append(p)
-    if intern_bullets:
-        _fill_bullets(intern_bullets, data["intern_bullets"])
+        if not _is_bullet(p):  # an entry title line opens a new entry
+            cur_slot = []
+            entry_slots.append(cur_slot)
+        elif cur_slot is not None:
+            cur_slot.append(p)
+    # Growing/shrinking one entry only touches elements between its own title and the
+    # next, so the later entries' Paragraph objects stay valid.
+    for slot, entry in zip(entry_slots, data["experience"]):
+        _fill_bullets(slot, entry["bullets"])
 
     # --- SELECTED PROJECTS: positional fill of each project slot ---
     edu_start = _find_header(paras, "EDUCATION")
