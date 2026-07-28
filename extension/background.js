@@ -9,6 +9,7 @@ const BACKEND_BASE = "http://localhost:8000";
 const ROUTES = {
   SUMMARIZE: "/summarize",
   COVER_LETTER: "/cover-letter",
+  ADD_JOB: "/add-job",
 };
 
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {

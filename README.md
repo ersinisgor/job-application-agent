@@ -16,6 +16,9 @@ Her yeni satır için:
 Bir satır şu durumda işlenir: **K (link) dolu**, **N (CV No) boş** ve **B (Başvuru)**
 sütunu `Geçmiş` / `Vazgeçildi` / `✓` *değil* (yani `+`, `++` veya boş).
 
+Satırı elle girebilirsin, ama normal yol extension panelindeki **Ekle** butonudur: ilandayken
+bir tık, satır (link + pozisyon + firma) tabloya düşer ve poller devralır.
+
 ## Kurulum
 
 ```bash
@@ -127,11 +130,16 @@ extension'ı (MV3). Özetleme, bu projeye entegre bir FastAPI servisi (`src/appl
 `CLAUDE_MODEL`'inden ayrıdır). Çıkarılan alanlar: Rol Özeti, Çalışma Şekli, Vize/Sponsorluk, Birincil/
 İkincil Dil, Araçlar, Framework'ler, Kütüphaneler, Min. Deneyim.
 
+Panelde ayrıca **Ekle** butonu vardır: ilanı tabloya ekler (link/pozisyon/firma) ve CV No'yu boş
+bırakır, böylece CV poller onu devralır. Buton API'ye, CV ise poller'a ihtiyaç duyduğu için normal
+çalıştırma yolu `./scripts/start.sh`'tir.
+
 **Tek komutla başlat (API + CV poller birlikte, Ctrl+C ikisini durdurur):**
 ```bash
 ./scripts/start.sh
 ```
 Yalnız özet API'sini çalıştırmak için: `./.venv/bin/python scripts/run_summary_api.py`
+(bu durumda **Ekle** satırı ekler ama CV üretilmez.)
 
 **Extension'ı yükle (bir kez):** `chrome://extensions` → Developer mode → **Load unpacked** →
 `job-apply-agent/extension` klasörünü seç. Ardından `https://www.linkedin.com/jobs/` sayfasında bir ilana

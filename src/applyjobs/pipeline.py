@@ -14,7 +14,7 @@ from .config import (
     STATE_DIR,
     settings,
 )
-from .scraper import Scraper
+from .scraper import JobPage, Scraper
 from .sheets import Row, SheetsClient
 
 logger = logging.getLogger(__name__)
@@ -90,6 +90,10 @@ def save_huntr_seen(keys: set[str]) -> None:
 
 def sync_huntr_to_sheet() -> int:
     """Import newly-saved Huntr board jobs into the sheet. Returns rows appended.
+
+    OFF by default now — the extension panel's "Ekle" button (summary_api's /add-job) is
+    the primary "new job -> sheet row" source. This stays here, inert, unless
+    HUNTR_BOARD_URL is set again.
 
     Identity is the job id (column M / _job_key), not createdAt. We keep a persisted set
     of board job keys we've already handled ('seen'). Each scan, a key that newly appears
@@ -255,17 +259,42 @@ def _export_google_doc(cv_no: int, cv_md: str) -> None:
         record_failure("drive_export", cv_no=cv_no, error=repr(exc))
 
 
-def _scrape_fields(row: Row, scraper: Scraper):
+def _scrape_fields(row: Row, scraper: Scraper, allow_staged: bool = False):
     """Scrape the job page once and return (JobPage, fields).
 
     `fields` are the only-empty column values to write to the sheet. Shared by the
     CV-generation path and the info-only (CV_GENERATION off) path.
+
+    allow_staged: when the scrape fails and the panel staged this posting's text
+    (state/pending_jd/<job_id>.md, written by /add-job), build a description-only JobPage
+    from it instead of propagating the error — the CV is then grounded in exactly what
+    the user read in the panel. City/work type/easy-apply stay empty, which is harmless:
+    _fill_page_fields skips empty values, so the J/L written at append time survive.
+    Only the CV path passes True (see _process_info_only).
     """
-    jp = scraper.fetch_job(row.link)
-    logger.info(
-        "Fetched page: %r @ %r | %s | %s (%d chars desc)",
-        jp.title, jp.company, jp.city, jp.work_type, len(jp.description),
-    )
+    try:
+        jp = scraper.fetch_job(row.link)
+    except Exception as exc:  # noqa: BLE001 - RuntimeError (too short), ValueError, timeouts
+        staged = (
+            joblookup.load_pending_jd(joblookup.linkedin_job_id(row.link))
+            if allow_staged
+            else ""
+        )
+        if not staged:
+            raise  # unchanged behaviour: the row is retried on the next scan
+        logger.warning(
+            "Scrape failed for row %d (%r); falling back to the %d-char description "
+            "staged by the panel. City/work type stay empty.",
+            row.number, exc, len(staged),
+        )
+        # Notify: this CV is grounded in the panel's heuristic text, not the posting page.
+        record_failure("scrape_fallback", row=row.number, link=row.link, error=repr(exc))
+        jp = JobPage(url=row.link, description=staged)
+    else:
+        logger.info(
+            "Fetched page: %r @ %r | %s | %s (%d chars desc)",
+            jp.title, jp.company, jp.city, jp.work_type, len(jp.description),
+        )
     fields = {
         "C": jp.easy_apply,
         "F": jp.city,
@@ -287,7 +316,7 @@ def _generate_and_save(
     languages ("Python, Java") for column Q. G (work mode) is intentionally NOT inferred —
     it is filled manually — so the relocation sentence uses the row's existing G if set.
     """
-    jp, fields = _scrape_fields(row, scraper)
+    jp, fields = _scrape_fields(row, scraper, allow_staged=True)
 
     work_mode = row.work_mode  # manual (often empty -> default relocation sentence)
     city = row.city or jp.city
@@ -431,6 +460,13 @@ def _process_info_only(candidates: list[Row], sheets: SheetsClient) -> int:
         for row in candidates:
             logger.info("Processing row %d (info-only, no CV) -> %s", row.number, row.link)
             try:
+                # No allow_staged here, deliberately: this path wants the PAGE's fields,
+                # and a staged JobPage carries none. Falling back would write a permanent
+                # NO_CV_MARKER with zero information gained (and such a row is never
+                # retro-generated). Retrying next scan is the better outcome. In practice
+                # unreachable for panel-added rows anyway: with CV generation off,
+                # /add-job writes the marker at append time, so they never become
+                # candidates.
                 _, fields = _scrape_fields(row, scraper)
             except Exception as exc:  # noqa: BLE001
                 logger.exception(
@@ -462,6 +498,9 @@ def run_scan(
     only_row: process only this sheet row number (must still be a candidate).
     """
     sheets = SheetsClient()
+    # Staged descriptions whose row was deleted or never generated. Cheap (the directory
+    # normally holds 0-5 files) and this is the only long-running process that can do it.
+    joblookup.prune_pending_jd()
     rows = sheets.get_rows()
     candidates = find_candidates(rows)
 
@@ -522,6 +561,11 @@ def run_scan(
                 )
                 save_last_cv_no(cv_no)
                 next_no += 1
+                # The description now lives in job_description_<no>.md, which is what
+                # regenerate and the cover letter read. Drop the panel's staging copy.
+                # After the sheet write on purpose: a failed write keeps the fallback
+                # available for the retry.
+                joblookup.clear_pending_jd(joblookup.linkedin_job_id(row.link))
             except Exception as exc:  # noqa: BLE001
                 logger.exception(
                     "Sheet write failed for row %d (CV files were saved; will retry next scan).",
