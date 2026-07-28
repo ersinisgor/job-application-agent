@@ -680,8 +680,9 @@
     });
   }
 
-  // Reflect which view is active on the header buttons.
-  function updateHeaderButtons(panelArg) {
+  // Reflect which view is active on the header buttons. `jobIdArg` is the job the
+  // caller is rendering for; pass it whenever you have it (see the "Ekle" note below).
+  function updateHeaderButtons(panelArg, jobIdArg) {
     const panel = panelArg || document.getElementById("jobsum-panel");
     if (!panel) return;
     const lb = panel.querySelector("#jobsum-list");
@@ -696,7 +697,13 @@
     // every rebuild. Skipped mid-flash so the transient label survives the 700ms poll.
     const ab = panel.querySelector("#jobsum-add");
     if (ab && !addBusy) {
-      const done = isAdded(lastJobId || getCurrentJobId());
+      // The id MUST come from the caller when there is one. renderReviewStatus runs at
+      // the top of maybeUpdate, BEFORE lastJobId is reassigned further down, so reading
+      // lastJobId here labels the button for the job we just left — and since that call
+      // is memoised by reviewRenderKey it never re-runs, leaving the wrong label stuck.
+      // Without a caller (user actions) the live page beats the last-summarized job.
+      const jobId = jobIdArg !== undefined ? jobIdArg : getCurrentJobId() || lastJobId;
+      const done = isAdded(jobId);
       ab.textContent = done ? "Eklendi ✓" : "Ekle";
       ab.classList.toggle("is-active", done);
       ab.disabled = false;
@@ -741,7 +748,7 @@
     const key = `${jobId || ""}:${isReviewed(jobId)}:${isMaybe(jobId)}:${isAdded(jobId)}`;
     if (key === reviewRenderKey) return; // nothing changed
     reviewRenderKey = key;
-    updateHeaderButtons(panel); // the "Ekle" label is per-job state too
+    updateHeaderButtons(panel, jobId); // the "Ekle" label is per-job state too
 
     if (!jobId) {
       slot.className = "jobsum-review";
