@@ -624,7 +624,19 @@
   user-select: text;
   font-size: 12px;
   line-height: 1.5;
-  color: #e8eaed;
+  color: #1f2328; /* same as .jobsum-value — dark override is at the end of the file */
   max-height: 60vh;
   overflow-y: auto;
+}
+
+/* This block MUST stay after the cover-letter rules above, not inside the main
+   dark-mode section higher up: a media query adds no specificity, so the later
+   .jobsum-cover-text rule would win and the letter would stay dark-on-dark. */
+@media (prefers-color-scheme: dark) {
+  .jobsum-cover-text {
+    color: #e8e6e3;
+  }
+  .jobsum-cover-meta {
+    color: #a9b0b8;
+  }
 }
