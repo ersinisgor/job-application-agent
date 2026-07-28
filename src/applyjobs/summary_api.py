@@ -630,10 +630,20 @@ def cover_letter_endpoint(req: CoverLetterRequest) -> CoverLetterResponse:
         raise HTTPException(status_code=500, detail=f"Sheet okunamadı: {exc}")
 
     if cv_no is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Bu ilan için CV No yok — önce CV üretilmeli.",
-        )
+        # Two very different situations shared one message before, and "önce CV
+        # üretilmeli" reads like "it's queued" even when the posting was never added.
+        # Naming the id also surfaces the case where the panel resolved a DIFFERENT job
+        # than the one on screen — otherwise invisible from the panel.
+        job_id = req.job_id.strip()
+        row = _find_job_row(job_id)
+        if row is None:
+            logger.info("cover-letter: job %s is not in the sheet at all", job_id)
+            detail = f"Bu ilan ({job_id}) tabloda yok — önce \"Ekle\" ile ekle."
+        else:
+            logger.info("cover-letter: job %s is at row %d but has no CV No yet",
+                        job_id, row.number)
+            detail = f"Bu ilan tabloda (satır {row.number}) ama CV'si henüz üretilmedi."
+        raise HTTPException(status_code=404, detail=detail)
 
     try:
         text, created = cover_letter.get_or_create(
