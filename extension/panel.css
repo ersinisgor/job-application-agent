@@ -356,24 +356,10 @@
 }
 
 /* Reviewed job cards in the list: dimmed + a small badge. */
-.jobsum-seen {
-  opacity: 0.55;
-  position: relative;
-}
-
-.jobsum-seen-badge {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  z-index: 5;
-  background: #eef3f8;
-  color: #57606a;
-  border-radius: 10px;
-  padding: 1px 7px;
-  font-size: 10px;
-  font-weight: 600;
-  pointer-events: none;
-}
+/* Reviewed list cards (.jobsum-seen / .jobsum-seen-badge) are styled INLINE from
+   content.js — this stylesheet does not reach the shadow roots LinkedIn renders
+   cards in, and a single class loses to LinkedIn's own rules. The classes stay as
+   state markers only, so there are deliberately no rules for them here. */
 
 /* Header actions: five buttons plus the close button. Wrap rather than squeeze — the
    panel is 340px wide and the Turkish labels are long. */
@@ -585,10 +571,6 @@
   }
   .jobsum-review-btn--maybe.is-active:hover {
     background: #a371f7;
-  }
-  .jobsum-seen-badge {
-    background: #29343d;
-    color: #a9b0b8;
   }
   .jobsum-listitem {
     border-bottom-color: #38434f;

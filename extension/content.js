@@ -263,6 +263,20 @@
     return null;
   }
 
+  // Like deepQuery, but returns EVERY match across all roots. The card decoration
+  // needs all of them, not the first one.
+  function deepQueryAll(selector, roots) {
+    const out = [];
+    for (const root of roots || collectRoots()) {
+      try {
+        root.querySelectorAll(selector).forEach((el) => out.push(el));
+      } catch (_) {
+        /* invalid selector for this root type; skip */
+      }
+    }
+    return out;
+  }
+
   function firstMatchText(selectorList) {
     const roots = collectRoots();
     for (const sel of selectorList) {
@@ -406,6 +420,11 @@
       `DIAG iframes=${totalIframes} (readable=${readableIframes}) ` +
         `shadowRoots=${shadows} rootsSearched=${roots.length}`
     );
+    // Card side of the same DOM: a layout that hides the description usually also
+    // hides the cards, and a zero here explains a missing "görüldü" badge.
+    const deepCards = deepQueryAll(CARD_SELECTOR, roots).length;
+    const docCards = document.querySelectorAll(CARD_SELECTOR).length;
+    console.warn(LOG, `DIAG cards deep=${deepCards} (document-only=${docCards})`);
   }
 
   // After the extension is reloaded/updated, the content script already injected
@@ -1301,34 +1320,125 @@
       });
   }
 
-  // Dim reviewed job cards in the list and add a "görüldü" badge. Re-applied
-  // every tick because LinkedIn virtualizes the list (cards mount/unmount).
+  // --- Reviewed-card decoration ---------------------------------------------
+  // LinkedIn's own dismissal is forgotten within a day: the same posting comes back
+  // looking untouched. Our own memory is permanent, so paint it onto the card —
+  // dimmed, a blue stripe down the left edge, and a "görüldü" badge by the X button.
+  //
+  // The styling is applied INLINE, not through panel.css, for two reasons: the
+  // manifest-declared stylesheet does not cascade into the shadow roots the new UI
+  // renders cards in, and a single class loses to LinkedIn's own rules. The classes
+  // below survive only as state/lookup markers.
+  const SEEN_PROPS = ["opacity", "box-shadow", "position"];
+  const BADGE_TEXT = "görüldü";
+
+  function seenColors() {
+    const dark =
+      window.matchMedia &&
+      window.matchMedia("(prefers-color-scheme: dark)").matches;
+    return dark
+      ? { bg: "#29343d", fg: "#a9b0b8", stripe: "#70b5f9" }
+      : { bg: "#eef3f8", fg: "#57606a", stripe: "#0a66c2" };
+  }
+
+  function styleSeenCard(card, colors) {
+    const s = card.style;
+    s.setProperty("opacity", "0.5", "important");
+    // inset, so the stripe costs no layout (a border-left would shift the content).
+    s.setProperty("box-shadow", `inset 4px 0 0 ${colors.stripe}`, "important");
+    // The badge is absolute and needs a containing block. Read the card's natural
+    // position ONCE and cache it on the element: re-reading on a later tick would
+    // see the "relative" we just set and flip the decision back and forth forever.
+    if (card.__jobsumPos === undefined)
+      card.__jobsumPos = getComputedStyle(card).position;
+    if (card.__jobsumPos === "static")
+      s.setProperty("position", "relative", "important");
+  }
+
+  function makeSeenBadge(colors) {
+    const badge = document.createElement("span");
+    badge.className = "jobsum-seen-badge";
+    badge.textContent = BADGE_TEXT;
+    const s = badge.style;
+    s.setProperty("position", "absolute", "important");
+    s.setProperty("top", "4px", "important");
+    s.setProperty("right", "4px", "important");
+    s.setProperty("z-index", "5", "important");
+    s.setProperty("background", colors.bg, "important");
+    s.setProperty("color", colors.fg, "important");
+    s.setProperty("border-radius", "10px", "important");
+    s.setProperty("padding", "1px 7px", "important");
+    s.setProperty("font-size", "10px", "important");
+    s.setProperty("font-weight", "600", "important");
+    s.setProperty("line-height", "16px", "important");
+    // The badge sits over LinkedIn's X button — clicks must pass through to it.
+    s.setProperty("pointer-events", "none", "important");
+    return badge;
+  }
+
+  // Our class and our badge are two independent leftovers — LinkedIn's own render
+  // can drop either one — so "is this card decorated?" must ask about both, or an
+  // undone job could stay dimmed (or badged) for good.
+  function hasSeenDecoration(card) {
+    return (
+      card.classList.contains("jobsum-seen") ||
+      !!card.querySelector(":scope > .jobsum-seen-badge")
+    );
+  }
+
+  function clearSeenCard(card) {
+    card.classList.remove("jobsum-seen");
+    SEEN_PROPS.forEach((p) => card.style.removeProperty(p));
+    const b = card.querySelector(":scope > .jobsum-seen-badge");
+    if (b) b.remove();
+  }
+
+  let seenCounts = ""; // last logged tally, so DEBUG only speaks on a change
+
+  // Re-applied every tick: LinkedIn virtualizes the list (cards mount/unmount) and
+  // re-renders a card's children in place, which silently drops our badge. Writing
+  // the same inline styles again is free and — unlike appending the badge — fires no
+  // mutation, so it cannot feed the observer that calls us.
   function markSeenCards() {
-    const cards = document.querySelectorAll(CARD_SELECTOR);
+    // collectRoots() walks every node of every root, which is too much to spend on
+    // each 700ms tick. The results list is rendered by ONE implementation, so if the
+    // main document holds list cards they are all there; only when it holds none do
+    // we pay for the deep (shadow root + same-origin iframe) scan.
+    const cards = document.querySelector(LIST_CARD_SELECTOR)
+      ? Array.from(document.querySelectorAll(CARD_SELECTOR))
+      : deepQueryAll(CARD_SELECTOR);
+    const colors = seenColors();
+    let resolved = 0;
+    let marked = 0;
     cards.forEach((card) => {
       if (card.closest("#jobsum-panel")) return; // never touch our own panel
       // The new UI repeats componentkey on a nested div; badge the outermost only.
       if (card.parentElement && card.parentElement.closest(CARD_SELECTOR)) return;
-      // Skip the big right-hand details pane (long text); only mark list cards.
-      if ((card.innerText || "").length > 800) return;
+      // A LIST_CARD_SELECTOR match is always a left-list card. The plain [data-job-id]
+      // shape is not: the big right-hand details pane can carry it too, so there the
+      // text length still decides.
+      if (!card.matches(LIST_CARD_SELECTOR) && (card.innerText || "").length > 800)
+        return;
       const id = cardJobId(card);
       if (!id) return;
-      const seen = isReviewed(id);
-      const marked = card.classList.contains("jobsum-seen");
-      if (seen && !marked) {
+      resolved++;
+      if (isReviewed(id)) {
+        marked++;
         card.classList.add("jobsum-seen");
-        if (!card.querySelector(":scope > .jobsum-seen-badge")) {
-          const badge = document.createElement("span");
-          badge.className = "jobsum-seen-badge";
-          badge.textContent = "görüldü";
-          card.appendChild(badge);
-        }
-      } else if (!seen && marked) {
-        card.classList.remove("jobsum-seen");
-        const b = card.querySelector(":scope > .jobsum-seen-badge");
-        if (b) b.remove();
+        styleSeenCard(card, colors);
+        if (!card.querySelector(":scope > .jobsum-seen-badge"))
+          card.appendChild(makeSeenBadge(colors));
+      } else if (hasSeenDecoration(card)) {
+        clearSeenCard(card);
       }
     });
+    if (DEBUG) {
+      const tally = `${cards.length}/${resolved}/${marked}`;
+      if (tally !== seenCounts) {
+        seenCounts = tally;
+        console.log(LOG, "DIAG cards scanned/with-id/seen:", tally);
+      }
+    }
   }
 
   function maybeUpdate() {
