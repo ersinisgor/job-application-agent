@@ -10,8 +10,12 @@ from __future__ import annotations
 import datetime
 import fcntl
 import functools
+import http.client
 import io
+import logging
 import os
+import socket
+import ssl
 import string
 import time
 from contextlib import contextmanager
@@ -25,6 +29,8 @@ from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
 from .config import SERVICE_ACCOUNT_FILE, SHEET_LOCK_FILE, settings
+
+logger = logging.getLogger(__name__)
 
 # Drive scope is required to read AND overwrite a user-owned file that was
 # shared with the service account.
@@ -199,6 +205,23 @@ def _languages_font(cell) -> Font:
     return Font(name=cell.font.name, size=LANGUAGES_FONT_SIZE)
 
 
+# A dead TCP connection, not a failed request. The summary API is a long-lived, mostly
+# idle process: Google closes the pooled keep-alive connection after a few minutes, and
+# the next Drive call writes into a socket nobody is listening on
+# (BrokenPipeError [Errno 32], or a reset / SSL EOF / "Remote end closed"). httplib2
+# only auto-retries ENETUNREACH and EADDRNOTAVAIL, so any of these reached the panel as
+# a 500 on the first click after a quiet spell.
+_STALE_CONN_ERRORS = (
+    ConnectionError,  # BrokenPipe / ConnectionReset / ConnectionAborted
+    TimeoutError,  # socket.timeout since 3.10
+    socket.gaierror,  # transient DNS failure (e.g. the laptop just woke up)
+    ssl.SSLError,  # includes SSLEOFError
+    http.client.HTTPException,  # RemoteDisconnected, CannotSendRequest, BadStatusLine
+)
+_DRIVE_ATTEMPTS = 3
+_DRIVE_RETRY_SLEEP = 1.0  # seconds, multiplied by the attempt number
+
+
 class SheetsClient:
     """Drive-backed reader/writer for the .xlsx job list."""
 
@@ -211,15 +234,64 @@ class SheetsClient:
 
     # --- Drive download / upload -------------------------------------------------
 
+    def _drop_stale_connections(self) -> None:
+        """Discard the pooled TCP connections so the next call dials a fresh one.
+
+        httplib2 caches one connection per host and does NOT close it when a write
+        fails with EPIPE, so a plain retry would reuse the same dead socket.
+        """
+        transport = getattr(self._drive, "_http", None)
+        # google_auth_httplib2.AuthorizedHttp wraps the real httplib2.Http in .http
+        inner = getattr(transport, "http", transport)
+        connections = getattr(inner, "connections", None)
+        if not connections:
+            return
+        for conn in list(connections.values()):
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001 - closing a dead socket may fail; ignore
+                pass
+        connections.clear()
+
+    def _retry_drive(self, what: str, call):
+        """Run a Drive call, redialling once the pooled connection has gone stale.
+
+        Only connection-level failures are retried; an HTTP error (404, 403, quota)
+        is a real answer from Google and must surface unchanged. Retrying is safe for
+        both calls here: the download is a read, and the upload replaces the whole
+        workbook with the same bytes while this process holds the sheet lock.
+        """
+        for attempt in range(1, _DRIVE_ATTEMPTS + 1):
+            try:
+                return call()
+            except _STALE_CONN_ERRORS as exc:
+                if attempt == _DRIVE_ATTEMPTS:
+                    raise
+                logger.warning(
+                    "Drive %s failed (%s: %s); reconnecting, attempt %d/%d",
+                    what,
+                    type(exc).__name__,
+                    exc,
+                    attempt + 1,
+                    _DRIVE_ATTEMPTS,
+                )
+                self._drop_stale_connections()
+                time.sleep(_DRIVE_RETRY_SLEEP * attempt)
+
     def _download_bytes(self) -> bytes:
-        request = self._drive.files().get_media(fileId=self._file_id)
-        buf = io.BytesIO()
-        downloader = MediaIoBaseDownload(buf, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-        buf.seek(0)
-        return buf.read()
+        def once() -> bytes:
+            # Rebuilt per attempt: a half-filled buffer from the failed try must not
+            # be prepended to the retry's bytes.
+            request = self._drive.files().get_media(fileId=self._file_id)
+            buf = io.BytesIO()
+            downloader = MediaIoBaseDownload(buf, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            buf.seek(0)
+            return buf.read()
+
+        return self._retry_drive("download", once)
 
     def _load_workbook(self):
         data = self._download_bytes()
@@ -232,10 +304,20 @@ class SheetsClient:
 
     def _upload(self, wb) -> None:
         buf = io.BytesIO()
-        wb.save(buf)
-        buf.seek(0)
-        media = MediaIoBaseUpload(buf, mimetype=XLSX_MIME, resumable=True)
-        self._drive.files().update(fileId=self._file_id, media_body=media).execute()
+        wb.save(buf)  # serialize once; only the transfer is retried
+        data = buf.getvalue()
+
+        def once() -> None:
+            # A fresh stream + media object per attempt: MediaIoBaseUpload keeps its
+            # own read position, so re-using it would upload a truncated workbook.
+            media = MediaIoBaseUpload(
+                io.BytesIO(data), mimetype=XLSX_MIME, resumable=True
+            )
+            self._drive.files().update(
+                fileId=self._file_id, media_body=media
+            ).execute()
+
+        self._retry_drive("upload", once)
 
     # --- Public API (same surface as before) -------------------------------------
 
