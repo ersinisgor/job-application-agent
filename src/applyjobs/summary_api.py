@@ -13,6 +13,7 @@ Endpoints:
     GET  /health        -> {"status": "ok", "model": ...}
     POST /summarize     -> JobSummary
     POST /cover-letter  -> CoverLetterResponse
+    POST /add-job       -> AddJobResponse   (panel "Ekle": append a row for the CV poller)
 
 NOTE: this module must never import pipeline (or scraper/huntr) — they pull in
 Playwright at module scope, and this process is the one that runs while the user is
@@ -25,6 +26,7 @@ from __future__ import annotations
 import json
 import logging
 import re
+import threading
 import time
 from collections import OrderedDict
 from functools import lru_cache
@@ -34,9 +36,17 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import cover_letter, joblookup
-from .config import CV_BASE_FILE, PROJECTS_LIST_FILE, SUMMARY_CACHE_FILE, settings
-from .sheets import SheetsClient
+from .config import (
+    CV_BASE_FILE,
+    NO_CV_MARKER,
+    PROJECTS_LIST_FILE,
+    SUMMARY_CACHE_FILE,
+    settings,
+)
+from .sheets import Row, SheetLockTimeout, SheetsClient
 from .summary_schema import (
+    AddJobRequest,
+    AddJobResponse,
     CoverLetterRequest,
     CoverLetterResponse,
     JobSummary,
@@ -181,6 +191,9 @@ _SYNONYM_GROUPS: list[set[str]] = [
         "pgvector",
     },
     {"sql server", "mssql", "ms sql server", "microsoft sql server"},
+    # Postings almost always write "GCP"; the profile names the concrete service
+    # (Google Cloud Run). Without this the deployment experience never matches.
+    {"gcp", "google cloud", "google cloud platform"},
     {"postgresql", "postgres", "postgre"},
     {"mongodb", "mongo"},
     # Postings often bolt the spec version onto the bare name; the CV writes the bare
@@ -315,26 +328,29 @@ def _sheets() -> SheetsClient:
     return SheetsClient()
 
 
-# The sheet rows + their job-id index, refreshed at most this often. Only the cover
-# letter needs them; reading the sheet downloads the whole .xlsx from Drive (~1-3s),
-# far too slow to repeat on every panel click. Rows and index are cached together so
-# resolving a job costs at most ONE download.
+# The sheet rows + their job-id indexes, refreshed at most this often. Reading the sheet
+# downloads the whole .xlsx from Drive (~1-3s), far too slow to repeat on every panel
+# click. Rows and indexes are cached together so resolving a job costs at most ONE
+# download. _JOB_INDEX only covers rows that already have a CV No; _LINK_INDEX covers
+# every linked row, which is what /add-job's duplicate check needs.
 _SHEET_ROWS: list = []
 _JOB_INDEX: dict[str, int] = {}
+_LINK_INDEX: dict[str, Row] = {}
 _SHEET_AT = 0.0
 _SHEET_TTL = 300.0
 
 
 def _sheet_snapshot(force: bool = False):
-    """(rows, job_id -> cv_no index), re-downloaded when stale or forced."""
-    global _SHEET_ROWS, _JOB_INDEX, _SHEET_AT
+    """(rows, job_id -> cv_no, job_id -> Row), re-downloaded when stale or forced."""
+    global _SHEET_ROWS, _JOB_INDEX, _LINK_INDEX, _SHEET_AT
     if force or not _SHEET_ROWS or (time.monotonic() - _SHEET_AT) > _SHEET_TTL:
         _SHEET_ROWS = _sheets().get_rows()
         _JOB_INDEX = joblookup.build_job_index(_SHEET_ROWS)
+        _LINK_INDEX = joblookup.build_link_index(_SHEET_ROWS)
         _SHEET_AT = time.monotonic()
-        logger.info("sheet snapshot refreshed: %d rows, %d jobs indexed",
-                    len(_SHEET_ROWS), len(_JOB_INDEX))
-    return _SHEET_ROWS, _JOB_INDEX
+        logger.info("sheet snapshot refreshed: %d rows, %d with a CV No, %d linked",
+                    len(_SHEET_ROWS), len(_JOB_INDEX), len(_LINK_INDEX))
+    return _SHEET_ROWS, _JOB_INDEX, _LINK_INDEX
 
 
 def _resolve_job(job_id: str):
@@ -344,14 +360,30 @@ def _resolve_job(job_id: str):
     once assigned. A MISS always costs one fresh read before we 404, because the
     poller may have written the CV No seconds ago. Misses are never cached.
     """
-    rows, index = _sheet_snapshot()
+    rows, index, _ = _sheet_snapshot()
     cv_no = index.get(job_id)
     if cv_no is None:
-        rows, index = _sheet_snapshot(force=True)
+        rows, index, _ = _sheet_snapshot(force=True)
         cv_no = index.get(job_id)
     if cv_no is None:
         return None, None
     return cv_no, joblookup.find_row_for_cv_no(rows, cv_no)
+
+
+def _find_job_row(job_id: str) -> Row | None:
+    """The sheet row tracking this posting (CV No or not), or None.
+
+    Same shape as _resolve_job: a HIT may come from a stale snapshot (a row never stops
+    existing), a MISS costs one fresh read before we treat the posting as new — the
+    poller or a hand-typed row may have appeared seconds ago, and a wrong miss appends a
+    duplicate.
+    """
+    _, _, link_index = _sheet_snapshot()
+    row = link_index.get(job_id)
+    if row is None:
+        _, _, link_index = _sheet_snapshot(force=True)
+        row = link_index.get(job_id)
+    return row
 
 
 def _build_user_message(req: SummarizeRequest) -> str:
@@ -405,7 +437,7 @@ _SUMMARY_CACHE: "OrderedDict[str, JobSummary]" = OrderedDict()
 _CACHE_MAX = 3000
 # Bump whenever the scoring rubric (SYSTEM_PROMPT) or JobSummary schema changes, so a
 # stale on-disk cache from the old rules is discarded instead of returning old scores.
-_CACHE_VERSION = 10
+_CACHE_VERSION = 11
 
 
 def _load_cache() -> None:
@@ -538,6 +570,11 @@ def _http_from(exc: Exception, what: str) -> HTTPException:
     Shared by both endpoints so their error handling can't drift apart. `what` names
     the operation for the catch-all message.
     """
+    if isinstance(exc, SheetLockTimeout):
+        return HTTPException(
+            status_code=503,
+            detail="Tablo şu anda güncelleniyor; birkaç saniye sonra tekrar dene.",
+        )
     if isinstance(exc, MissingCredentialsError):
         return HTTPException(status_code=500, detail=str(exc))
     if isinstance(exc, anthropic.RateLimitError):
@@ -596,10 +633,20 @@ def cover_letter_endpoint(req: CoverLetterRequest) -> CoverLetterResponse:
         raise HTTPException(status_code=500, detail=f"Sheet okunamadı: {exc}")
 
     if cv_no is None:
-        raise HTTPException(
-            status_code=404,
-            detail="Bu ilan için CV No yok — önce CV üretilmeli.",
-        )
+        # Two very different situations shared one message before, and "önce CV
+        # üretilmeli" reads like "it's queued" even when the posting was never added.
+        # Naming the id also surfaces the case where the panel resolved a DIFFERENT job
+        # than the one on screen — otherwise invisible from the panel.
+        job_id = req.job_id.strip()
+        row = _find_job_row(job_id)
+        if row is None:
+            logger.info("cover-letter: job %s is not in the sheet at all", job_id)
+            detail = f"Bu ilan ({job_id}) tabloda yok — önce \"Ekle\" ile ekle."
+        else:
+            logger.info("cover-letter: job %s is at row %d but has no CV No yet",
+                        job_id, row.number)
+            detail = f"Bu ilan tabloda (satır {row.number}) ama CV'si henüz üretilmedi."
+        raise HTTPException(status_code=404, detail=detail)
 
     try:
         text, created = cover_letter.get_or_create(
@@ -612,3 +659,118 @@ def cover_letter_endpoint(req: CoverLetterRequest) -> CoverLetterResponse:
         raise _http_from(exc, "cover letter generation")
 
     return CoverLetterResponse(text=text, cv_no=cv_no, lang=req.lang, created=created)
+
+
+# --- /add-job: the panel's "Ekle" button ----------------------------------------
+# Replaces the Huntr import as the "new job -> sheet row" source. It writes only link (K),
+# title (L) and company (J) and leaves CV No (N) empty, which is exactly the shape
+# pipeline.is_candidate looks for — the poller then scrapes and generates as it always has.
+
+_JOB_VIEW_URL = "https://www.linkedin.com/jobs/view/{}/"
+
+# FastAPI runs sync endpoints in a threadpool, so a double-click can put two requests in
+# _find_job_row at once: both miss, both append, two rows for one posting. The whole
+# check-then-append is therefore serialized in-process. (sheets.sheet_lock only guards
+# the upload itself, and only ACROSS processes.)
+_ADD_LOCK = threading.Lock()
+
+
+def _canonical_link(job_id: str, url: str) -> str:
+    """A /jobs/view/<id>/ link, whatever the panel sent.
+
+    On /jobs/search-results the page URL is "?currentJobId=<id>" and contains no
+    "/jobs/view/". Writing that to K would break column M's formula, pipeline._job_key
+    and every later duplicate check — silently. So rebuild it from the id unless the
+    given URL already carries the same id.
+    """
+    url = (url or "").strip()
+    if url and joblookup.linkedin_job_id(url) == job_id:
+        return url.split("?", 1)[0]
+    return _JOB_VIEW_URL.format(job_id)
+
+
+def _remember_appended_row(job_id: str, row_number: int, link: str, job: dict,
+                           marker: str | None) -> None:
+    """Insert the just-appended row into the cached snapshot.
+
+    A second click must see "exists" without waiting out the 5-minute TTL and without
+    paying another whole-.xlsx download. The synthetic row carries no numeric N, so
+    _JOB_INDEX and find_row_for_cv_no are unaffected.
+    """
+    row = Row(
+        number=row_number,
+        cells={
+            "J": job.get("company", ""),
+            "K": link,
+            "L": job.get("title", ""),
+            "N": marker or "",
+        },
+    )
+    _SHEET_ROWS.append(row)
+    _LINK_INDEX[job_id] = row
+
+
+@app.post("/add-job", response_model=AddJobResponse)
+def add_job_endpoint(req: AddJobRequest) -> AddJobResponse:
+    """Append this posting to the sheet so the CV poller picks it up."""
+    job_id = (req.job_id or "").strip()
+    if not job_id:
+        raise HTTPException(status_code=422, detail="'job_id' must not be empty.")
+    if not job_id.isdigit():
+        raise HTTPException(status_code=422, detail=f"Geçersiz ilan no: {job_id!r}")
+
+    link = _canonical_link(job_id, req.url)
+
+    with _ADD_LOCK:
+        try:
+            row = _find_job_row(job_id)
+        except FileNotFoundError as exc:  # service account missing
+            logger.exception("Sheet unavailable")
+            raise HTTPException(status_code=500, detail=f"Sheet okunamadı: {exc}")
+        except Exception as exc:  # noqa: BLE001
+            raise _http_from(exc, "sheet read")
+
+        if row is not None:
+            # Already tracked — never append a second row (find_candidates would skip it
+            # anyway). Re-stage the text while the row is still CV-less: the user may be
+            # clicking again precisely because the first scrape failed.
+            staged = (
+                joblookup.save_pending_jd(job_id, req.description)
+                if not row.cv_no
+                else False
+            )
+            logger.info("add-job: %s already at row %d (N=%r)", job_id, row.number, row.cv_no)
+            return AddJobResponse(
+                status="exists", row=row.number, cv_no=row.cv_no, staged=staged
+            )
+
+        # Stage BEFORE appending: an appended row with no fallback silently degrades to
+        # the old behaviour, whereas an orphan staged file is harmless (never read
+        # without a matching row, and pruned by the poller).
+        try:
+            staged = joblookup.save_pending_jd(job_id, req.description)
+        except OSError:
+            logger.warning("Could not stage the description for job %s", job_id)
+            staged = False
+
+        marker = None if settings.cv_generation else NO_CV_MARKER
+        job = {
+            "url": link,
+            "title": (req.title or "").strip(),
+            "company": (req.company or "").strip(),
+        }
+        try:
+            written = _sheets().append_job_rows([job], cv_no_marker=marker)
+        except Exception as exc:  # noqa: BLE001
+            if staged:
+                joblookup.clear_pending_jd(job_id)  # don't leave a file with no row
+            raise _http_from(exc, "sheet append")
+
+        row_number = written[0]
+        _remember_appended_row(job_id, row_number, link, job, marker)
+
+    logger.info("add-job: appended row %d for job %s (staged=%s, marker=%r)",
+                row_number, job_id, staged, marker)
+    return AddJobResponse(
+        status="added", row=row_number, cv_no=marker or "", staged=staged
+    )

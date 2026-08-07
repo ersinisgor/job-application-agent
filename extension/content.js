@@ -190,6 +190,11 @@
 
   const reviewed = makeMarkerStore("jobsum_reviewed", "reviewed");
   const maybe = makeMarkerStore("jobsum_maybe", "maybe");
+  // Postings already appended to the sheet via "Ekle". A local mirror of a server-side
+  // fact, so revisiting a job renders the button as done without downloading the sheet.
+  // If the store is ever lost, clicking again just returns status "exists" and re-marks.
+  const added = makeMarkerStore("jobsum_added", "added");
+  const isAdded = added.has;
 
   // Thin aliases keep the (many) reviewed call sites readable.
   const isReviewed = reviewed.has;
@@ -562,6 +567,19 @@
     return c && c.summary ? c.summary.fit_score : null;
   }
 
+  // Title/company/fit for the job on screen: the summary is authoritative, the panel
+  // header is the fallback — minus its static "Job Summary" placeholder, which must
+  // never travel to the sheet's L column.
+  function jobMeta(jobId) {
+    const c = CACHE.get(jobId);
+    const headTitle = lastHeader.title === "Job Summary" ? "" : lastHeader.title;
+    return {
+      title: (c && c.summary && c.summary.job_title) || headTitle || "",
+      company: (c && c.summary && c.summary.company) || lastHeader.company || "",
+      fit: cachedFit(jobId),
+    };
+  }
+
   // --- Panel: appended under <html>, re-created if removed ---
 
   function buildPanel() {
@@ -570,6 +588,7 @@
     panel.innerHTML = `
       <div id="jobsum-header">
         <div id="jobsum-actions">
+          <button id="jobsum-add" type="button" title="İlanı tabloya ekle (CV üretilsin)" aria-label="İlanı tabloya ekle">Ekle</button>
           <button id="jobsum-refresh" type="button" title="Özeti yeniden oluştur" aria-label="Özeti yeniden oluştur">Yenile</button>
           <button id="jobsum-cover" type="button" title="Bu ilan için cover letter" aria-label="Bu ilan için cover letter">Mektup</button>
           <button id="jobsum-list" type="button" title="İncelenen ilanlar" aria-label="İncelenen ilanlar">Liste</button>
@@ -588,6 +607,7 @@
       userClosed = true;
       panel.remove();
     });
+    panel.querySelector("#jobsum-add").addEventListener("click", addCurrentJob);
     panel.querySelector("#jobsum-refresh").addEventListener("click", refreshSummary);
     panel.querySelector("#jobsum-cover").addEventListener("click", () => toggleCover());
     panel
@@ -660,8 +680,9 @@
     });
   }
 
-  // Reflect which view is active on the header buttons.
-  function updateHeaderButtons(panelArg) {
+  // Reflect which view is active on the header buttons. `jobIdArg` is the job the
+  // caller is rendering for; pass it whenever you have it (see the "Ekle" note below).
+  function updateHeaderButtons(panelArg, jobIdArg) {
     const panel = panelArg || document.getElementById("jobsum-panel");
     if (!panel) return;
     const lb = panel.querySelector("#jobsum-list");
@@ -670,6 +691,23 @@
     if (lb) lb.classList.toggle("is-active", showingList && listKind === "reviewed");
     if (mb) mb.classList.toggle("is-active", showingList && listKind === "maybe");
     if (cb) cb.classList.toggle("is-active", showingCover);
+
+    // "Ekle" is not a view toggle — it reflects per-job state. buildPanel() restores the
+    // header from a static HTML string, so without this the label resets to "Ekle" on
+    // every rebuild. Skipped mid-flash so the transient label survives the 700ms poll.
+    const ab = panel.querySelector("#jobsum-add");
+    if (ab && !addBusy) {
+      // The id MUST come from the caller when there is one. renderReviewStatus runs at
+      // the top of maybeUpdate, BEFORE lastJobId is reassigned further down, so reading
+      // lastJobId here labels the button for the job we just left — and since that call
+      // is memoised by reviewRenderKey it never re-runs, leaving the wrong label stuck.
+      // Without a caller (user actions) the live page beats the last-summarized job.
+      const jobId = jobIdArg !== undefined ? jobIdArg : getCurrentJobId() || lastJobId;
+      const done = isAdded(jobId);
+      ab.textContent = done ? "Eklendi ✓" : "Ekle";
+      ab.classList.toggle("is-active", done);
+      ab.disabled = false;
+    }
   }
 
   // Back to the summary view from a list or the cover letter.
@@ -707,9 +745,10 @@
     const slot = panel.querySelector("#jobsum-review");
     if (!slot) return;
 
-    const key = `${jobId || ""}:${isReviewed(jobId)}:${isMaybe(jobId)}`;
+    const key = `${jobId || ""}:${isReviewed(jobId)}:${isMaybe(jobId)}:${isAdded(jobId)}`;
     if (key === reviewRenderKey) return; // nothing changed
     reviewRenderKey = key;
+    updateHeaderButtons(panel, jobId); // the "Ekle" label is per-job state too
 
     if (!jobId) {
       slot.className = "jobsum-review";
@@ -737,14 +776,7 @@
     slot.innerHTML = reviewedHtml + maybeHtml;
 
     // Snapshot title/company/fit so the marked entry shows up nicely in its list.
-    const meta = () => {
-      const c = CACHE.get(jobId);
-      return {
-        title: (c && c.summary && c.summary.job_title) || lastHeader.title || "",
-        company: (c && c.summary && c.summary.company) || lastHeader.company || "",
-        fit: cachedFit(jobId),
-      };
-    };
+    const meta = () => jobMeta(jobId);
 
     slot.querySelectorAll("button").forEach((btn) => {
       const act = btn.getAttribute("data-act");
@@ -1020,6 +1052,76 @@
     lastShownDescription = description;
     showLoading();
     requestSummary(jobId, description, { force: true });
+  }
+
+  // --- "Ekle": append this posting to the sheet ------------------------------
+  // The backend writes link (K) + title (L) + company (J) and leaves CV No (N) empty,
+  // which is exactly what the CV poller looks for. The posting text travels with it and
+  // is STAGED server-side: the poller still scrapes the page itself (primary source) and
+  // only falls back to this text when that scrape fails (expired posting / login wall).
+
+  let addBusy = false;
+  const ADD_TITLE = "İlanı tabloya ekle (CV üretilsin)";
+
+  function addCurrentJob() {
+    if (addBusy) return; // a double-click must not append twice
+    const btn = document.getElementById("jobsum-add");
+    const jobId = lastJobId || getCurrentJobId();
+    if (!jobId) {
+      flashAdd(btn, "İlan yok");
+      return;
+    }
+    // lastShownDescription is the text the panel actually summarized for THIS job, so
+    // prefer it; re-read the DOM only when the summary hasn't landed yet (or belongs to
+    // another job). Sending nothing is still fine — the scrape is the primary source.
+    const fresh = jobId === lastJobId ? lastShownDescription : "";
+    const description = fresh || getDescription() || "";
+    const meta = jobMeta(jobId);
+
+    addBusy = true;
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "Ekleniyor…";
+    }
+    callBackend("ADD_JOB", {
+      job_id: jobId,
+      url: markerJobUrl(jobId), // canonical /jobs/view/<id>/ — see _canonical_link
+      title: meta.title,
+      company: meta.company,
+      description,
+    })
+      .then((data) => {
+        added.mark(jobId, meta);
+        console.log(LOG, "add-job:", data.status, "row", data.row);
+        let label;
+        if (data.status === "exists") {
+          label = data.cv_no ? `Zaten var · CV ${data.cv_no}` : "Zaten var";
+        } else {
+          label = data.staged ? "Eklendi ✓" : "Eklendi (metin yok)";
+        }
+        flashAdd(btn, label);
+      })
+      .catch((err) => {
+        console.warn(LOG, "add-job error:", err.message);
+        flashAdd(btn, "Hata", err.message);
+      });
+  }
+
+  // Transient label on the button (same pattern as the letter's "Kopyala"), then back to
+  // whatever the persisted state says. Never touches the body: a bookkeeping action must
+  // not clobber the summary the user is reading.
+  function flashAdd(btn, label, tooltip) {
+    if (!btn) {
+      addBusy = false;
+      return;
+    }
+    btn.textContent = label;
+    if (tooltip) btn.title = tooltip;
+    setTimeout(() => {
+      addBusy = false;
+      btn.title = ADD_TITLE;
+      updateHeaderButtons();
+    }, 2200);
   }
 
   // --- Cover letter ---------------------------------------------------------
@@ -1371,8 +1473,9 @@
     console.log(LOG, "extension context gone; content script stopped");
   }
 
-  reviewed.load(); // load persisted "reviewed" + "maybe" memory, then reflect it
+  reviewed.load(); // load persisted "reviewed" / "maybe" / "added" memory, then reflect it
   maybe.load();
+  added.load();
   ensurePanel();
   scheduleUpdate();
 })();

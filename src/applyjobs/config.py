@@ -51,6 +51,21 @@ HUNTR_CURSOR_FILE = STATE_DIR / "huntr_cursor.txt"
 # posting is summarized once and survives an API restart.
 SUMMARY_CACHE_FILE = STATE_DIR / "summary_cache.json"
 
+# Job descriptions staged by the extension panel's "Ekle" button, keyed by LinkedIn job
+# id. The poller's guest-view scrape stays PRIMARY; this text is only read when that
+# scrape fails, so a CV is still produced from what the user actually saw in the panel.
+PENDING_JD_DIR = STATE_DIR / "pending_jd"
+# Below this many characters the staged text is not a posting (a half-loaded stub), and
+# a CV grounded in it would be worse than none. Deliberately above scraper's 80-char floor.
+PENDING_JD_MIN_CHARS = 200
+# Staged files are deleted once their CV is written; anything older than this is junk
+# (row deleted by hand, CV generation off, an append that failed).
+PENDING_JD_MAX_AGE_DAYS = 14
+
+# Advisory lock guarding a whole download -> edit -> upload of the .xlsx. Two processes
+# now write it: the CV poller and the summary API (the panel's "Ekle" button).
+SHEET_LOCK_FILE = STATE_DIR / "sheet.lock"
+
 # Values in the "Başvuru" (B) column that should NOT trigger CV generation.
 SKIP_BASVURU_VALUES = {"Geçmiş", "Vazgeçildi", "Başvurulmuş", "✓"}
 
@@ -173,6 +188,7 @@ class Settings:
         self.job_description_dir.mkdir(parents=True, exist_ok=True)
         self.cover_letter_dir.mkdir(parents=True, exist_ok=True)
         STATE_DIR.mkdir(parents=True, exist_ok=True)
+        PENDING_JD_DIR.mkdir(parents=True, exist_ok=True)
 
 
 settings = Settings.load()

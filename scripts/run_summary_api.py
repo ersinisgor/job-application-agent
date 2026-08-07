@@ -18,10 +18,14 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import uvicorn  # noqa: E402
 
+from src.applyjobs.reporting import setup_console_logging  # noqa: E402
 from src.applyjobs.summary_api import app  # noqa: E402
 
 
 def main() -> None:
+    # Before uvicorn.run: its dictConfig leaves existing loggers alone, so the root
+    # handler added here survives and the app's own lines land next to the access log.
+    setup_console_logging()
     port = int(os.getenv("SUMMARY_API_PORT", "8000"))
     uvicorn.run(app, host="127.0.0.1", port=port)
 

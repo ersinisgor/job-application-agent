@@ -8,8 +8,13 @@ written back to column N.
 from __future__ import annotations
 
 import datetime
+import fcntl
+import functools
 import io
+import os
 import string
+import time
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 
 import openpyxl
@@ -19,7 +24,7 @@ from google.oauth2.service_account import Credentials
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
-from .config import SERVICE_ACCOUNT_FILE, settings
+from .config import SERVICE_ACCOUNT_FILE, SHEET_LOCK_FILE, settings
 
 # Drive scope is required to read AND overwrite a user-owned file that was
 # shared with the service account.
@@ -62,6 +67,64 @@ DROPDOWNS: dict[str, list[str]] = {
     "G": ["Hybrit", "On-site", "Remote"],            # Uzaktan
     "H": ["Full-Time", "Part-Time", "Contract"],     # Çalışma Şekli
 }
+
+
+class SheetLockTimeout(RuntimeError):
+    """Another process held the sheet lock past the timeout."""
+
+
+_LOCK_TIMEOUT = 120.0  # a download-edit-upload is ~2-6s; 120s means something is wrong
+_LOCK_POLL = 0.25
+
+
+@contextmanager
+def sheet_lock(timeout: float = _LOCK_TIMEOUT):
+    """Serialize a whole download -> openpyxl edit -> upload across PROCESSES.
+
+    Two writers exist: the CV poller (write_processed_row) and the summary API
+    (/add-job -> append_job_rows, while you browse LinkedIn). Each re-downloads the file,
+    edits it in memory and re-uploads the WHOLE workbook, so without this an append that
+    started before a CV write finished would upload a workbook lacking that CV No —
+    silently undoing it, and the poller would regenerate the CV on the next scan.
+
+    Advisory flock on state/sheet.lock, non-blocking + retry so we can time out instead
+    of hanging a panel request forever.
+
+    NOT re-entrant: flock on a second open file description of the same file blocks even
+    within one process. Never call one @_locked method from inside another.
+    """
+    SHEET_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
+    fd = os.open(SHEET_LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o644)
+    deadline = time.monotonic() + timeout
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise SheetLockTimeout(
+                        f"Sheet is being written by another process "
+                        f"(waited {timeout:.0f}s)."
+                    )
+                time.sleep(_LOCK_POLL)
+        try:
+            yield
+        finally:
+            fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        os.close(fd)
+
+
+def _locked(method):
+    """Wrap a mutating SheetsClient method in the cross-process sheet lock."""
+
+    @functools.wraps(method)
+    def wrapper(self, *args, **kwargs):
+        with sheet_lock():
+            return method(self, *args, **kwargs)
+
+    return wrapper
 
 
 def _apply_dropdowns(ws) -> None:
@@ -207,6 +270,7 @@ class SheetsClient:
         nums = [n for r in rows if (n := self._as_int(r.cv_no)) is not None]
         return (max(nums) + 1) if nums else 1
 
+    @_locked
     def write_cv_number(self, row_number: int, cv_no: int) -> None:
         """Re-download the latest file, set N{row}, and re-upload.
 
@@ -218,6 +282,7 @@ class SheetsClient:
         _apply_dropdowns(ws)
         self._upload(wb)
 
+    @_locked
     def write_match_rate(self, row_number: int, match_rate: float) -> None:
         """Write the post-optimization ATS Match Rate to column P."""
         wb, ws = self._load_workbook()
@@ -225,6 +290,7 @@ class SheetsClient:
         _apply_dropdowns(ws)
         self._upload(wb)
 
+    @_locked
     def write_cv_and_match(
         self, row_number: int, cv_no: int, match_rate: float | None = None
     ) -> None:
@@ -263,6 +329,7 @@ class SheetsClient:
             cell.hyperlink = url
             cell.font = _link_font(cell)
 
+    @_locked
     def append_job_rows(self, jobs: list[dict], cv_no_marker: str | None = None) -> list[int]:
         """Append rows for new jobs — writes K (link) + E (date) + A (No) + I + M.
 
@@ -340,8 +407,15 @@ class SheetsClient:
         fill("F", fields.get("F", ""))   # city
         fill("H", fields.get("H", ""))   # employment type
         fill("L", fields.get("L", ""))   # title
-        j_cell = fill("J", fields.get("J", ""))  # company
-        if j_cell is not None and fields.get("J_url"):
+        fill("J", fields.get("J", ""))   # company
+
+        # The company HYPERLINK is applied whenever the scrape found one and the cell
+        # doesn't already have one — deliberately NOT gated on us having just written the
+        # text. The panel's "Ekle" button fills J at append time (plain text, it has no
+        # company URL), so an only-empty rule would leave the name un-clickable forever:
+        # by the time the scrape returns company_url the cell is no longer empty.
+        j_cell = ws.cell(row=row_number, column=self._col("J"))
+        if fields.get("J_url") and not j_cell.hyperlink and _cell_to_str(j_cell.value).strip():
             j_cell.hyperlink = fields["J_url"]
             j_cell.font = _link_font(j_cell)
 
@@ -353,6 +427,7 @@ class SheetsClient:
         cell.value = languages
         cell.font = _languages_font(cell)
 
+    @_locked
     def write_processed_row(
         self,
         row_number: int,
@@ -375,6 +450,7 @@ class SheetsClient:
         _apply_dropdowns(ws)
         self._upload(wb)
 
+    @_locked
     def write_info_only_row(self, row_number: int, fields: dict, cv_no_marker: str) -> None:
         """CV-generation-OFF path: fill ONLY-EMPTY C/F/H/J/L from the scraped page and
         write a non-numeric marker (e.g. "Yok") to N so the row counts as handled but is

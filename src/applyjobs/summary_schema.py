@@ -127,3 +127,38 @@ class CoverLetterResponse(BaseModel):
     created: bool = Field(
         description="True if the model was just called; False if read from disk."
     )
+
+
+class AddJobRequest(BaseModel):
+    """Request body for /add-job — the panel's "Ekle" button.
+
+    Replaces the Huntr import as the "new job -> sheet row" source. It carries the
+    posting text the panel already has so it can be STAGED: the poller's guest-view
+    scrape stays primary, but when that fails (expired posting, LinkedIn wall) the CV is
+    still generated from what the user actually read.
+    """
+
+    job_id: str = Field(description="LinkedIn job id (digits): row identity and file key.")
+    url: str = Field(default="", description="Posting URL; canonicalized server-side.")
+    title: str = Field(default="", max_length=300, description="Position title -> column L.")
+    company: str = Field(default="", max_length=300, description="Company -> column J.")
+    description: str = Field(
+        default="",
+        max_length=200_000,
+        description="Posting text, staged as the CV-generation fallback.",
+    )
+
+
+class AddJobResponse(BaseModel):
+    """Response body for /add-job."""
+
+    status: str = Field(description="'added' (row appended) or 'exists' (already tracked).")
+    row: int = Field(description="Sheet row number of the new or existing row.")
+    cv_no: str = Field(
+        default="",
+        # A STRING, not an int: column N legitimately holds the non-numeric "Yok" marker.
+        description="Raw column N: '' (pending), a number, or the 'Yok' marker.",
+    )
+    staged: bool = Field(
+        default=False, description="True if the posting text was stored as the fallback."
+    )

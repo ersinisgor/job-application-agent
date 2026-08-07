@@ -1,0 +1,26 @@
+# The Markdown files in config/ are DATA, not prose: their exact layout is parsed.
+#
+# - cv_base.md is read back by docx_builder.parse_markdown_cv(), which keys off the
+#   `### `/`#### ` heading levels, the `*` bullet marker, the trailing ` <br>` and the
+#   `Tech:` line sitting directly under the last bullet. Prettier rewrites `*` to `-`,
+#   inserts a blank line after every heading and indents the `Tech:` continuation line,
+#   so a format-on-save silently changes what the generator sees.
+# - The prompt files (ats_prompt.md, ats_review_prompt.md, cover_letter_prompt.md) are
+#   sent to the model verbatim, placeholders and numbering included.
+# - projects.md / projects_list.md are the profile the CV and the fit score are grounded
+#   in; reformatting them only produces noise in the diff.
+#
+# Patterns are deliberately unanchored (`**/config/`, not `config/`) so they still
+# match when VS Code's workspace root is a PARENT folder and this ignore file is
+# resolved from there.
+config/
+**/config/
+**/cv_base.md
+**/projects.md
+**/projects_list.md
+**/*_prompt.md
+
+# Generated / vendored
+.venv/
+state/
+credentials/

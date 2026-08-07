@@ -12,8 +12,8 @@ başlattığın sürece** izler. Aşağıdaki iki kullanım şeklinden birini se
 
 ## Seçenek A — Sürekli izleme ("başlat ve unut")
 
-Terminal açık kaldığı sürece her 60 saniyede bir tabloyu kontrol eder; yeni ilan
-girdikçe ~1 dakika içinde otomatik işler (CV No + Match Rate + Google Doc).
+Terminal açık kaldığı sürece her 20 saniyede bir tabloyu kontrol eder; yeni ilan
+girdikçe (elle ya da panelin **Ekle** butonuyla) otomatik işler (CV No + Match Rate + Google Doc).
 
 ```bash
 cd /Users/mac/code/ersinisgor/job-apply-agent
@@ -98,6 +98,11 @@ silebilir. (Uygulama bu sütunlara asla yazmaz; sorun eşzamanlı düzenlemeden 
 >
 > En kesin yöntem: ilanları gir, tabloyu kapat, sonra **Seçenek B** (tek seferlik) ile çalıştır.
 
+⚠️ **Yeni:** Panelin **Ekle** butonu geldiğinden beri uygulama **sen LinkedIn'de gezerken de**
+tabloya yazıyor (yeni satır ekliyor). Yani "sadece işleme sırasında yazar" varsayımı artık geçerli
+değil — **LinkedIn'de ilan bakarken tablo sekmesini kapalı tut.** Yeni satırlar her zaman en alta
+eklenir, o yüzden üstteki düzenlediğin satırlara dokunmaz; ama dosyanın tamamı yine geri yüklenir.
+
 ## Hangi satırlar işlenir?
 
 İlan linki (K) dolu **ve** CV No (N) boş olan satırlar.
@@ -117,29 +122,40 @@ Yani `+`, `++` veya boş olanlar işlenir.
 
 ---
 
-## Huntr entegrasyonu (opsiyonel)
+## İlan ekleme — panel "Ekle" butonu
 
-Açıkken, Huntr board'una kaydettiğin yeni ilanın **linkini** sheet'e (K) yazar. Sonra uygulama o
-linke gidip ilan sayfasından **Firma (J, tıklanabilir), Pozisyon (L), Yer (F), Çalışma Şekli (H)**
-sütunlarını doldurur (sadece boş hücreleri) ve CV üretir.
+Başvurmak istediğin LinkedIn ilanındayken paneldeki **Ekle** butonuna bas. Tabloya yeni bir
+satır eklenir: **İlan Linki (K), Pozisyon (L), Firma (J)**. CV No (N) boş bırakılır — poller
+onu ~20 saniye içinde görüp ilan sayfasına gidip **Yer (F)** ve **Çalışma Şekli (H)** sütunlarını
+da doldurur (sadece boş hücreleri) ve CV'yi üretir.
+
 - **G (Uzaktan)** otomatik doldurulmaz → elle girersin (LinkedIn bu bilgiyi otomasyona vermiyor).
 - **C (Easy Apply)** LinkedIn ilanlarında boş kalır (elle), LinkedIn dışı linklerde "Yok".
+- Buton **API'ye ihtiyaç duyar, CV ise poller'a** — bu yüzden normal kullanım `./scripts/start.sh`
+  (ikisini birlikte başlatır). Sadece `start_api.sh` çalışıyorsa satır eklenir ama CV üretilmez.
 
-**Açma:** `.env`'de `HUNTR_BOARD_URL=<board adresin>` ayarla. **Kapatma:** o satırı boş bırak/sil
-→ uygulama Huntr'sız eski hâline döner (kod değişmez).
+**Buton etiketleri:**
 
-**İlk kurulum (tek seferlik):**
-```bash
-./.venv/bin/python scripts/huntr_login.py     # tarayıcıda Huntr'a giriş yap, ENTER
-```
-- İlk çalıştırmada mevcut Huntr ilanların "görüldü" işaretlenir (içeri alınmaz); sadece bundan
-  sonra kaydettiklerin sheet'e eklenir.
-- Manuel test: `./.venv/bin/python scripts/run_once.py --huntr`
-- Çekme sorun çıkarırsa: `./.venv/bin/python scripts/huntr_debug.py` → `huntr_debug/` klasörünü paylaş.
+| Etiket | Anlamı |
+|--------|--------|
+| `Ekle` | ilan henüz tabloda değil |
+| `Ekleniyor…` | istek gidiyor |
+| `Eklendi ✓` | satır eklendi (ilan metni de yedek olarak kaydedildi) |
+| `Eklendi (metin yok)` | satır eklendi ama sayfadan açıklama okunamadı — poller yine de scrape edecek |
+| `Zaten var` / `Zaten var · CV 312` | bu ilan tabloda zaten kayıtlı, ikinci satır açılmadı |
+| `Hata` | üzerine gel, hata mesajı tooltip'te |
 
-**Geri dönüş cümleleri (bana söyleyeceklerin):**
-- **"Huntr'ı kapat"** → geçici/anında durdur (`.env`'den `HUNTR_BOARD_URL` kaldırılır).
-- **"Huntr entegrasyonunu tamamen geri al"** → kod Huntr öncesine döndürülür (git restore point).
+**İlan açıklaması yedeği:** Ekle'ye bastığında panelin ekranda okuduğu ilan metni
+`state/pending_jd/<ilan_no>.md` dosyasına da kaydedilir. Poller normalde ilan sayfasını kendisi
+okur (birincil kaynak); **sadece bu okuma başarısız olursa** (ilan kaldırılmış, LinkedIn duvarı)
+kaydedilen metne düşer ve CV yine üretilir. Böyle bir durumda macOS bildirimi gelir. CV yazıldıktan
+sonra dosya silinir.
+
+### Huntr (artık kapalı)
+
+`.env`'de `HUNTR_BOARD_URL` boş → Huntr hiç çalışmıyor. Kod duruyor; geri açmak için board
+adresini o satıra yazman yeterli (`./.venv/bin/python scripts/huntr_login.py` ile bir kez giriş
+yapman gerekir, ilk çalıştırmada mevcut ilanlar "görüldü" işaretlenir).
 
 ## Kimlik bilgileri (tekrar gerekir mi?)
 

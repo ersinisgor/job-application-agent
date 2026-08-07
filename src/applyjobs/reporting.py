@@ -24,6 +24,29 @@ FAILURES_FILE = STATE_DIR / "failures.log"
 
 logger = logging.getLogger(__name__)
 
+LOG_FORMAT = "%(asctime)s %(levelname)-7s %(name)s | %(message)s"
+LOG_DATEFMT = "%Y-%m-%d %H:%M:%S"
+
+
+def setup_console_logging(level: int = logging.INFO) -> None:
+    """Console-only logging, for the summary-API process. Safe to call twice.
+
+    Deliberately NOT setup_logging(): that also attaches a RotatingFileHandler to
+    state/agent.log, which the poller already owns. Two processes rotating the same file
+    race and truncate each other's output. The API runs in the same terminal as the
+    poller (scripts/start.sh), so stdout is where its lines belong — without it, an
+    application-level log line (which row an "Ekle" hit, why a cover letter 404'd) goes
+    nowhere at all and only uvicorn's access line is visible.
+    """
+    root = logging.getLogger()
+    root.setLevel(level)
+    if any(getattr(h, "_applyjobs_console", False) for h in root.handlers):
+        return
+    console = logging.StreamHandler(sys.stdout)
+    console.setFormatter(logging.Formatter(LOG_FORMAT, LOG_DATEFMT))
+    console._applyjobs_console = True  # marker so a second call is a no-op
+    root.addHandler(console)
+
 
 def setup_logging(level: int = logging.INFO) -> None:
     """Configure console + rotating-file logging. Safe to call once per program start."""

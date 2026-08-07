@@ -16,6 +16,9 @@ Her yeni satır için:
 Bir satır şu durumda işlenir: **K (link) dolu**, **N (CV No) boş** ve **B (Başvuru)**
 sütunu `Geçmiş` / `Vazgeçildi` / `✓` *değil* (yani `+`, `++` veya boş).
 
+Satırı elle girebilirsin, ama normal yol extension panelindeki **Ekle** butonudur: ilandayken
+bir tık, satır (link + pozisyon + firma) tabloya düşer ve poller devralır.
+
 ## Kurulum
 
 ```bash
@@ -100,7 +103,7 @@ python scripts/run_once.py --dry-run  # sadece listeler, hiçbir şey yazmaz
 ## Yapı
 
 ```
-config/      cv_base.md, projects_list.md, ats_prompt.md, cv_template.docx
+config/      cv_base.md, projects.md, projects_list.md, ats_prompt.md, cv_template.docx
 credentials/ service_account.json, linkedin_state.json, oauth_client.json, oauth_token.json (gitignored)
 src/applyjobs/
   config.py       ayarlar ve yollar
@@ -117,7 +120,8 @@ state/       processed.json, last_cv_no (gitignored)
 
 ## Notlar
 - Varsayılan model `claude-sonnet-4-6` (`.env`'de `CLAUDE_MODEL` ile değiştirilebilir).
-- CV girdiniz değişirse `config/cv_base.md` ve `config/projects_list.md` dosyalarını güncelleyin.
+- CV girdiniz değişirse `config/cv_base.md` ve `config/projects.md` dosyalarını güncelleyin. Prompt'a
+  giden **detaylı** proje listesi `projects.md`'dir (`projects_list.md` kısa/özet sürümdür).
 
 ## LinkedIn İlan Özet Extension'ı
 
@@ -127,11 +131,16 @@ extension'ı (MV3). Özetleme, bu projeye entegre bir FastAPI servisi (`src/appl
 `CLAUDE_MODEL`'inden ayrıdır). Çıkarılan alanlar: Rol Özeti, Çalışma Şekli, Vize/Sponsorluk, Birincil/
 İkincil Dil, Araçlar, Framework'ler, Kütüphaneler, Min. Deneyim.
 
+Panelde ayrıca **Ekle** butonu vardır: ilanı tabloya ekler (link/pozisyon/firma) ve CV No'yu boş
+bırakır, böylece CV poller onu devralır. Buton API'ye, CV ise poller'a ihtiyaç duyduğu için normal
+çalıştırma yolu `./scripts/start.sh`'tir.
+
 **Tek komutla başlat (API + CV poller birlikte, Ctrl+C ikisini durdurur):**
 ```bash
 ./scripts/start.sh
 ```
 Yalnız özet API'sini çalıştırmak için: `./.venv/bin/python scripts/run_summary_api.py`
+(bu durumda **Ekle** satırı ekler ama CV üretilmez.)
 
 **Extension'ı yükle (bir kez):** `chrome://extensions` → Developer mode → **Load unpacked** →
 `job-apply-agent/extension` klasörünü seç. Ardından `https://www.linkedin.com/jobs/` sayfasında bir ilana

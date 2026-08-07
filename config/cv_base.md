@@ -2,7 +2,7 @@
 Backend Developer focused on building scalable REST APIs and backend systems using Node.js (NestJS) and .NET. Experienced in designing modular architectures, implementing authentication/authorization, working with PostgreSQL, and containerizing services with Docker. Comfortable owning features end-to-end and delivering production-ready backend applications in startup environments. Open to relocation and on-site or hybrid opportunities.
 
 ### CORE SKILLS
-**Backend:** Node.js, NestJS, Express, TypeScript, C#, .NET Core <br>
+**Backend:** Node.js, NestJS, Express, TypeScript, Python, C#, .NET Core <br>
 **Frontend:** React, Next.js, JavaScript, HTML, CSS, Tailwind CSS <br>
 **API Development:** RESTful APIs, JWT Authentication, RBAC, Swagger, Postman <br>
 **Databases:** PostgreSQL, MongoDB, Supabase, SQL Server, MySQL, TypeORM, Prisma, EF Core <br>
