@@ -103,7 +103,7 @@ python scripts/run_once.py --dry-run  # sadece listeler, hiçbir şey yazmaz
 ## Yapı
 
 ```
-config/      cv_base.md, projects_list.md, ats_prompt.md, cv_template.docx
+config/      cv_base.md, projects.md, projects_list.md, ats_prompt.md, cv_template.docx
 credentials/ service_account.json, linkedin_state.json, oauth_client.json, oauth_token.json (gitignored)
 src/applyjobs/
   config.py       ayarlar ve yollar
@@ -120,7 +120,8 @@ state/       processed.json, last_cv_no (gitignored)
 
 ## Notlar
 - Varsayılan model `claude-sonnet-4-6` (`.env`'de `CLAUDE_MODEL` ile değiştirilebilir).
-- CV girdiniz değişirse `config/cv_base.md` ve `config/projects_list.md` dosyalarını güncelleyin.
+- CV girdiniz değişirse `config/cv_base.md` ve `config/projects.md` dosyalarını güncelleyin. Prompt'a
+  giden **detaylı** proje listesi `projects.md`'dir (`projects_list.md` kısa/özet sürümdür).
 
 ## LinkedIn İlan Özet Extension'ı
 

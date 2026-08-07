@@ -191,6 +191,9 @@ _SYNONYM_GROUPS: list[set[str]] = [
         "pgvector",
     },
     {"sql server", "mssql", "ms sql server", "microsoft sql server"},
+    # Postings almost always write "GCP"; the profile names the concrete service
+    # (Google Cloud Run). Without this the deployment experience never matches.
+    {"gcp", "google cloud", "google cloud platform"},
     {"postgresql", "postgres", "postgre"},
     {"mongodb", "mongo"},
     # Postings often bolt the spec version onto the bare name; the CV writes the bare
@@ -434,7 +437,7 @@ _SUMMARY_CACHE: "OrderedDict[str, JobSummary]" = OrderedDict()
 _CACHE_MAX = 3000
 # Bump whenever the scoring rubric (SYSTEM_PROMPT) or JobSummary schema changes, so a
 # stale on-disk cache from the old rules is discarded instead of returning old scores.
-_CACHE_VERSION = 10
+_CACHE_VERSION = 11
 
 
 def _load_cache() -> None:

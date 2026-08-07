@@ -8,28 +8,47 @@ Do not invent project details.
 
 **Explanation**
 
-ApiHotelProject is a comprehensive hotel management system developed using ASP.NET Core API, MS SQL Server, Rapid API, and API Consume. It provides a seamless experience for both hotel administrators and guests, offering features such as user authentication, booking management, and integration with external APIs.
+ApiHotelProject is a hotel management system built on .NET 10: a layered ASP.NET Core Web API backend, an ASP.NET Core MVC front end with a public hotel site and an admin dashboard, and SQL Server for storage. It offers user authentication with roles, booking and room management, staff/service/testimonial management, SMTP mail and file upload. The project was migrated from .NET 5 to .NET 10 (LTS), containerized with Docker and deployed live to Google Cloud Run against an Azure SQL Database. Both applications ship in a single container image: the Web API listens on loopback only and the MVC front end is the sole public process, talking to the API over HTTP.
+
+Live demo: https://hotel-demo-453942543225.europe-west1.run.app
 
 **Technologies Used**
 
-* ASP.NET Core API
-* MS SQL Server
-* Rapid API
-* API Consume
-* ASP.NET Identity
-* Swagger
-* Postman
-* Fluent Validation
+**Backend**
+
+* .NET 10 (LTS)
+* ASP.NET Core Web API
+* Entity Framework Core 10
+* MS SQL Server / Azure SQL Database
+* ASP.NET Core Identity (cookie authentication, roles)
+* Data Protection with EF Core key storage
 * AutoMapper
-* ASP.NET MVC
-* Entity Framework Core
+* Fluent Validation
+* Swagger (Swashbuckle)
+* MailKit (SMTP)
 * Repository Design Pattern
-* SMTP
-* File Upload
-* View Component
-* JWT
-* Bootstrap 5
+* N-Tier Architecture
+* DTO Layer
+* Dependency Injection
 * OOP
+
+**Frontend**
+
+* ASP.NET Core MVC
+* Razor Views
+* View Components
+* Bootstrap 5
+* HTML
+* CSS
+* JavaScript
+
+**DevOps & Tools**
+
+* Docker (multi-stage build)
+* Google Cloud Run
+* Google Secret Manager
+* Postman
+* Git
 
 ---
 
@@ -242,3 +261,64 @@ AI Gift Advisor is a full-stack web application that generates personalized gift
 * Vite
 * Marked (Markdown Rendering)
 * DOMPurify
+
+---
+
+### 10. AI Knowledge Base Assistant (Full-Stack RAG Platform)
+
+**Explanation**
+
+A production-style Retrieval-Augmented Generation platform that turns documents (PDF, Markdown, Slack exports, wikis) into a queryable knowledge base. The ingestion pipeline cleans, chunks and embeds documents into pgvector; the query pipeline rewrites the question, retrieves the closest chunks, scores retrieval confidence, assembles a token-budgeted context and returns a grounded answer with source attribution. Built as a NestJS + Next.js monorepo with the pipeline logic implemented directly rather than delegated to a chain library.
+
+**Technologies Used**
+
+* NestJS
+* Next.js
+* TypeScript
+* PostgreSQL (pgvector)
+* Supabase
+* OpenAI API (GPT + embeddings)
+* LangChain
+* Tailwind CSS
+* Jest
+
+---
+
+### 11. Job Application Agent (AI CV Automation + LinkedIn Assistant)
+
+**Explanation**
+
+A Python automation platform that runs a whole job search end-to-end. A background poller watches a job-application spreadsheet, scrapes each new posting, and generates an ATS-optimized CV per job with Claude, rendering it from Markdown into a .docx template and exporting it to Google Docs and PDF. In parallel, a Chrome MV3 extension backed by a FastAPI service reads the LinkedIn posting the user is viewing and shows a short Turkish summary, the required stack, and a technology-fit score that is computed deterministically in Python instead of being left to the model. The panel can also add the job to the spreadsheet with one click and generate a cover letter on demand. Two processes share one workbook, so the writes are serialized with a cross-process file lock, and results are cached both in memory and on disk with a version stamp that invalidates them when the scoring rules change.
+
+**Technologies Used**
+
+**Backend**
+
+* Python
+* FastAPI
+* Uvicorn
+* Pydantic
+* Anthropic Claude API
+* Playwright
+* BeautifulSoup4
+* openpyxl
+* python-docx
+* Google Drive & Docs API
+* OAuth 2.0 / Service Account
+* REST API
+* Prompt Engineering
+* File Locking & Concurrency
+* Caching (LRU + disk)
+
+**Frontend**
+
+* JavaScript
+* Chrome Extension (Manifest V3)
+* HTML
+* CSS
+* Shadow DOM
+
+**Other Tools**
+
+* Git
+* Shell scripting
