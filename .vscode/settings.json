@@ -1,0 +1,13 @@
+{
+  // Markdown in this repo is DATA, not prose. config/cv_base.md is parsed line by line
+  // by docx_builder.parse_markdown_cv(), and the prompt files go to the model verbatim.
+  // A format-on-save pass rewrote '*' bullets to '-', added blank lines after headings
+  // and indented the 'Tech:' lines — which silently emptied every bullet list.
+  // .prettierignore covers Prettier specifically; this covers ANY markdown formatter.
+  "[markdown]": {
+    "editor.formatOnSave": false,
+    "editor.formatOnPaste": false,
+    "editor.formatOnSaveMode": "file"
+  },
+  "prettier.ignorePath": ".prettierignore"
+}

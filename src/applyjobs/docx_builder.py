@@ -30,6 +30,23 @@ XML_SPACE = qn("xml:space")
 # Markdown parsing
 # --------------------------------------------------------------------------- #
 
+# Both markers are accepted on purpose. cv_base.md is written with '*', but any
+# Markdown formatter (Prettier's format-on-save is the one that bit us) rewrites a
+# list to '-'. Matching only '*' made every bullet vanish from the parse, and
+# _fill_bullets() returns early on an empty list — so the template's frozen text
+# reached the employer instead of the generated bullets, silently. The trailing
+# \s+ keeps a '**Bold**' line from being read as a bullet.
+_BULLET_RE = re.compile(r"^[*-]\s+")
+
+
+def _is_md_bullet(line: str) -> bool:
+    return _BULLET_RE.match(line) is not None
+
+
+def _bullet_text(line: str) -> str:
+    return _strip_md(_BULLET_RE.sub("", line).strip())
+
+
 def _strip_md(text: str) -> str:
     """Remove markdown bold/italic markers and trailing <br>, return plain text.
 
@@ -96,8 +113,8 @@ def parse_markdown_cv(md: str) -> dict:
             if stripped.startswith("#### "):
                 cur_entry = {"title": _strip_md(stripped[5:]), "bullets": []}
                 experience.append(cur_entry)
-            elif cur_entry is not None and stripped.startswith("*"):
-                cur_entry["bullets"].append(_strip_md(stripped.lstrip("*").strip()))
+            elif cur_entry is not None and _is_md_bullet(stripped):
+                cur_entry["bullets"].append(_bullet_text(stripped))
 
         elif section == "SELECTED PROJECTS":
             if stripped.startswith("#### "):
@@ -106,8 +123,8 @@ def parse_markdown_cv(md: str) -> dict:
                 projects.append(cur_project)
             elif cur_project is not None and stripped.lower().startswith("tech:"):
                 cur_project["tech"] = _strip_md(stripped.split(":", 1)[1])
-            elif cur_project is not None and stripped.startswith("*"):
-                cur_project["bullets"].append(_strip_md(stripped.lstrip("*").strip()))
+            elif cur_project is not None and _is_md_bullet(stripped):
+                cur_project["bullets"].append(_bullet_text(stripped))
 
         elif section.startswith("PREVIOUS EXPERIENCE"):
             # The role title now lives in the heading, so every line here is description.
