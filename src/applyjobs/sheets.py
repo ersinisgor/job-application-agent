@@ -68,7 +68,11 @@ DROPDOWN_LAST_ROW = 1000
 # data validations when it re-saves the file, so we re-apply them on every write to
 # keep the user's manual-entry dropdowns intact.
 DROPDOWNS: dict[str, list[str]] = {
-    "B": ["Geçmiş", "Vazgeçildi", "✓", "+", "++"],   # Başvuru
+    # Başvuru. "Üretilecek" is the CV trigger (config.CV_TRIGGER_BASVURU_VALUES) and comes
+    # first so it is one click away; the rest are the values actually in use in the sheet.
+    # This list IS the sheet's dropdown — _apply_dropdowns rebuilds the validations from it
+    # on every write, so anything missing here disappears from the sheet's own dropdown.
+    "B": ["Üretilecek", "Olabilir", "Başvurulmuş", "✓", "Geçmiş", "Vazgeçildi"],
     "C": ["Var", "Yok"],                              # Easy Apply
     "G": ["Hybrit", "On-site", "Remote"],            # Uzaktan
     "H": ["Full-Time", "Part-Time", "Contract"],     # Çalışma Şekli

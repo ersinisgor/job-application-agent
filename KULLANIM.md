@@ -10,10 +10,27 @@ başlattığın sürece** izler. Aşağıdaki iki kullanım şeklinden birini se
 
 ---
 
+> ## ⚡ Önce şunu bil: CV artık ilanı eklerken değil, **sen isteyince** üretilir
+>
+> Panelin **Ekle** butonu satırı tabloya yazar, **CV üretmez**. Başvurmaya karar verdiğin gün
+> o satırın **B (Başvuru)** sütununu dropdown'dan **`Üretilecek`** yap — CV ancak o zaman üretilir.
+>
+> Sebebi: eklediğin ilana çoğu zaman aynı gün başvuramıyorsun, sıra geldiğinde ilan kalkmış
+> oluyordu ve hiç başvurmayacağın ilanlara CV üretilmiş oluyordu.
+>
+> **Toplu üretim:** işaretlemeyi bitirdikten sonra Finder'dan `scripts/cv_uret.command`
+> dosyasına **çift tıkla** — işaretli tüm satırlar için CV üretir, özet basar, kapanır.
+> (Poller açıksa zaten ~20 saniye içinde kendisi alır; ikisi aynı işi yapar.)
+>
+> **İşaretlediğin ilan kalkmışsa** CV üretilmez: o satırın **N** sütununa `Kalkmış` yazılır ve
+> hiçbir CV numarası harcanmaz.
+
+---
+
 ## Seçenek A — Sürekli izleme ("başlat ve unut")
 
-Terminal açık kaldığı sürece her 20 saniyede bir tabloyu kontrol eder; yeni ilan
-girdikçe (elle ya da panelin **Ekle** butonuyla) otomatik işler (CV No + Match Rate + Google Doc).
+Terminal açık kaldığı sürece her 20 saniyede bir tabloyu kontrol eder; **B sütunu `Üretilecek`
+yapılmış** satırları otomatik işler (CV No + Match Rate + Google Doc).
 
 ```bash
 cd /Users/mac/code/ersinisgor/job-apply-agent
@@ -26,15 +43,22 @@ cd /Users/mac/code/ersinisgor/job-apply-agent
 
 ---
 
-## Seçenek B — Tek seferlik (toplu)
+## Seçenek B — Tek seferlik (toplu) ← normal kullanım
 
-Birkaç ilanı tabloya ekledikten sonra **bir kez** çalıştır; bekleyen tüm satırları
-işleyip kapanır.
+Tabloda başvuracağın satırların **B sütununu `Üretilecek`** yap, kaydet, sonra **bir kez**
+çalıştır; işaretli tüm satırları işleyip kapanır.
+
+**En kolayı — çift tıkla:** Finder'da `job-apply-agent/scripts/cv_uret.command` dosyasına çift
+tıkla. Terminal açılır, üretimi yapar, `Kapatmak için bir tuşa bas...` der.
+
+Terminalden aynı şey:
 
 ```bash
 cd /Users/mac/code/ersinisgor/job-apply-agent
 ./.venv/bin/python scripts/run_once.py
 ```
+
+Sonunda tek satırlık özet gelir: `Scan complete: 3 CV(s) generated, 1 expired, 0 failed.`
 
 İşlemeden önce sadece hangi satırların işleneceğini görmek istersen (hiçbir şey yazmaz):
 
@@ -43,10 +67,17 @@ cd /Users/mac/code/ersinisgor/job-apply-agent
 ./.venv/bin/python scripts/run_once.py --dry-run
 ```
 
-Sadece tek bir satırı denemek istersen (örnek: 250. satır):
+Sadece tek bir satırı denemek istersen (örnek: 250. satır — o satır da `Üretilecek` olmalı):
 
 ```bash
 ./.venv/bin/python scripts/run_once.py --row 250
+```
+
+İlan gerçekten kalkmış ama **yine de** CV istiyorsan (Ekle'de kaydedilen ilan metninden üretir;
+önce o satırın N hücresindeki `Kalkmış` yazısını sil):
+
+```bash
+./.venv/bin/python scripts/run_once.py --row 250 --allow-staged
 ```
 
 ---
@@ -105,9 +136,17 @@ eklenir, o yüzden üstteki düzenlediğin satırlara dokunmaz; ama dosyanın ta
 
 ## Hangi satırlar işlenir?
 
-İlan linki (K) dolu **ve** CV No (N) boş olan satırlar.
-B sütunu (Başvuru) şu değerlerdeyse **atlanır:** `Geçmiş`, `Vazgeçildi`, `Başvurulmuş`, `✓`.
-Yani `+`, `++` veya boş olanlar işlenir.
+Üç şartın **üçü birden**: İlan linki (K) dolu + CV No (N) boş + **B sütunu (Başvuru) = `Üretilecek`**.
+
+| B sütunu | Ne olur |
+|----------|---------|
+| `Üretilecek` | ✅ CV üretilir (tek tetikleyici bu) |
+| boş | ⏸ hiçbir şey — satır bekler, sen işaretleyene kadar |
+| `Olabilir` / `Başvurulmuş` / `✓` / `Geçmiş` / `Vazgeçildi` | ⏸ atlanır |
+
+N sütunu hâlâ "yapıldı mı?" sorusunun cevabı: doluysa satır bir daha işlenmez. İçindeki
+`Kalkmış` yazısı "ilan yayından kalkmıştı, CV üretilmedi" demektir — silip B'yi tekrar
+`Üretilecek` yaparsan yeniden denenir.
 
 ## Üretilen dosyalar
 
@@ -124,15 +163,16 @@ Yani `+`, `++` veya boş olanlar işlenir.
 
 ## İlan ekleme — panel "Ekle" butonu
 
-Başvurmak istediğin LinkedIn ilanındayken paneldeki **Ekle** butonuna bas. Tabloya yeni bir
-satır eklenir: **İlan Linki (K), Pozisyon (L), Firma (J)**. CV No (N) boş bırakılır — poller
-onu ~20 saniye içinde görüp ilan sayfasına gidip **Yer (F)** ve **Çalışma Şekli (H)** sütunlarını
-da doldurur (sadece boş hücreleri) ve CV'yi üretir.
+İlgini çeken LinkedIn ilanındayken paneldeki **Ekle** butonuna bas. Tabloya yeni bir
+satır eklenir: **İlan Linki (K), Pozisyon (L), Firma (J)**. B ve CV No (N) boş bırakılır.
+
+⚠️ **Ekle CV üretmez.** Satır sen `B = Üretilecek` yapana kadar bekler. Üretim sırasında
+**Yer (F)** ve **Çalışma Şekli (H)** sütunları da ilan sayfasından doldurulur (sadece boş hücreler).
 
 - **G (Uzaktan)** otomatik doldurulmaz → elle girersin (LinkedIn bu bilgiyi otomasyona vermiyor).
 - **C (Easy Apply)** LinkedIn ilanlarında boş kalır (elle), LinkedIn dışı linklerde "Yok".
-- Buton **API'ye ihtiyaç duyar, CV ise poller'a** — bu yüzden normal kullanım `./scripts/start.sh`
-  (ikisini birlikte başlatır). Sadece `start_api.sh` çalışıyorsa satır eklenir ama CV üretilmez.
+- Buton **API'ye ihtiyaç duyar** (`./scripts/start_api.sh` veya `start.sh`). CV üretimi ise ayrı:
+  ya poller açık olacak, ya da `scripts/cv_uret.command`'a çift tıklayacaksın.
 
 **Buton etiketleri:**
 
@@ -146,10 +186,11 @@ da doldurur (sadece boş hücreleri) ve CV'yi üretir.
 | `Hata` | üzerine gel, hata mesajı tooltip'te |
 
 **İlan açıklaması yedeği:** Ekle'ye bastığında panelin ekranda okuduğu ilan metni
-`state/pending_jd/<ilan_no>.md` dosyasına da kaydedilir. Poller normalde ilan sayfasını kendisi
-okur (birincil kaynak); **sadece bu okuma başarısız olursa** (ilan kaldırılmış, LinkedIn duvarı)
-kaydedilen metne düşer ve CV yine üretilir. Böyle bir durumda macOS bildirimi gelir. CV yazıldıktan
-sonra dosya silinir.
+`state/pending_jd/<ilan_no>.md` dosyasına da kaydedilir. Üretim sırasında ilan sayfası **normalde
+yeniden okunur** (birincil kaynak); okuma başarısız olursa artık bu yedeğe **otomatik düşülmez** —
+satır `Kalkmış` işaretlenir ve CV üretilmez. Yedeği kullanmak isteyip istemediğine sen karar
+verirsin: `run_once.py --row <satır> --allow-staged`. CV yazıldıktan sonra dosya silinir
+(kullanılmayanlar 14 gün sonra temizlenir).
 
 ### Huntr (artık kapalı)
 
@@ -173,8 +214,12 @@ yapman gerekir, ilk çalıştırmada mevcut ilanlar "görüldü" işaretlenir).
 - **"command not found: python" benzeri hata:** `python` yerine her zaman `./.venv/bin/python`
   yaz (projeye özel Python budur).
 - **Yanlış klasördeyim:** her komuttan önce `cd /Users/mac/code/ersinisgor/job-apply-agent`.
-- **Bir ilan atlandı:** ilan yayından kalkmış olabilir; o satır işlenmez, diğerleri devam eder.
-  İlgili satırın CV No (N) hücresini silip tekrar çalıştırırsan yeniden denenir.
+- **Bir ilan atlandı / N'de `Kalkmış` yazıyor:** ilan yayından kalkmış (ya da LinkedIn okumayı
+  engellemiş); o satır için CV üretilmedi, CV numarası da harcanmadı, diğerleri devam etti.
+  Tekrar denemek için N hücresini sil ve B'yi yine `Üretilecek` yap. İlan gerçekten kalktıysa ve
+  yine de CV istiyorsan: `./.venv/bin/python scripts/run_once.py --row <satır> --allow-staged`.
+- **Hiçbir satır işlenmiyor ("No candidate rows"):** muhtemelen B sütununu `Üretilecek`
+  yapmayı unuttun. Kontrol: `./.venv/bin/python scripts/run_once.py --dry-run`.
 
 ---
 

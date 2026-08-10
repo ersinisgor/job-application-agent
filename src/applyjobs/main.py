@@ -39,11 +39,9 @@ def main() -> None:
                     log.exception("Huntr sync failed; continuing with sheet scan.")
 
             processed = run_scan(dry_run=False)
-            if processed:
-                if settings.cv_generation:
-                    log.info("Scan complete: %d CV(s) generated.", processed)
-                else:
-                    log.info("Scan complete: %d row(s) saved (info-only, no CV).", processed)
+            # The CV path logs its own "Scan complete: N generated, M expired, K failed."
+            if processed and not settings.cv_generation:
+                log.info("Scan complete: %d row(s) saved (info-only, no CV).", processed)
         except KeyboardInterrupt:
             raise
         except Exception:  # noqa: BLE001

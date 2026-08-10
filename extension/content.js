@@ -607,7 +607,7 @@
     panel.innerHTML = `
       <div id="jobsum-header">
         <div id="jobsum-actions">
-          <button id="jobsum-add" type="button" title="İlanı tabloya ekle (CV üretilsin)" aria-label="İlanı tabloya ekle">Ekle</button>
+          <button id="jobsum-add" type="button" title="İlanı tabloya ekle (CV için sheet'te B sütununu Üretilecek yap)" aria-label="İlanı tabloya ekle">Ekle</button>
           <button id="jobsum-refresh" type="button" title="Özeti yeniden oluştur" aria-label="Özeti yeniden oluştur">Yenile</button>
           <button id="jobsum-cover" type="button" title="Bu ilan için cover letter" aria-label="Bu ilan için cover letter">Mektup</button>
           <button id="jobsum-list" type="button" title="İncelenen ilanlar" aria-label="İncelenen ilanlar">Liste</button>
@@ -1080,7 +1080,7 @@
   // only falls back to this text when that scrape fails (expired posting / login wall).
 
   let addBusy = false;
-  const ADD_TITLE = "İlanı tabloya ekle (CV üretilsin)";
+  const ADD_TITLE = "İlanı tabloya ekle (CV için sheet'te B sütununu Üretilecek yap)";
 
   function addCurrentJob() {
     if (addBusy) return; // a double-click must not append twice

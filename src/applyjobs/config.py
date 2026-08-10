@@ -66,14 +66,26 @@ PENDING_JD_MAX_AGE_DAYS = 14
 # now write it: the CV poller and the summary API (the panel's "Ekle" button).
 SHEET_LOCK_FILE = STATE_DIR / "sheet.lock"
 
-# Values in the "Başvuru" (B) column that should NOT trigger CV generation.
-SKIP_BASVURU_VALUES = {"Geçmiş", "Vazgeçildi", "Başvurulmuş", "✓"}
+# Values in the "Başvuru" (B) column that DO trigger CV generation. An allow-list on
+# purpose: a row is added to the sheet the moment the posting looks interesting, but the
+# application often happens days later, by which time the posting may be gone — so a CV
+# made at add time is frequently a CV for a job never applied to. The user marks the row
+# "Üretilecek" when actually applying, and only then is a CV made. Keep this in sync with
+# sheets.DROPDOWNS["B"], which is what the sheet's dropdown actually offers.
+CV_TRIGGER_BASVURU_VALUES = {"Üretilecek"}
 
 # Marker written to the CV No column (N) for rows imported while CV generation is OFF.
 # It is non-numeric, so it is ignored by CV numbering yet still counts as "done" — the
 # row keeps its scraped info but is never (re-)assigned a CV. Clear it manually to make
 # the row eligible for a CV again.
 NO_CV_MARKER = "Yok"
+
+# Marker written to N when a marked row's posting can no longer be fetched. No CV is made
+# and no CV number is consumed: the whole point of the deferred trigger is to not spend a
+# generation on a posting that is gone. Clear N and re-mark B to try again (a scrape can
+# also fail for LinkedIn-side reasons), or force one from the panel's staged text with
+# `run_once.py --row N --allow-staged`.
+EXPIRED_MARKER = "Kalkmış"
 
 
 def _expand(path_str: str) -> Path:

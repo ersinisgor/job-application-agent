@@ -8,9 +8,10 @@ import re
 from . import docx_builder, drive_docs, generator, huntr, joblookup
 from .reporting import record_duplicate, record_failure
 from .config import (
+    CV_TRIGGER_BASVURU_VALUES,
+    EXPIRED_MARKER,
     HUNTR_SEEN_FILE,
     NO_CV_MARKER,
-    SKIP_BASVURU_VALUES,
     STATE_DIR,
     settings,
 )
@@ -184,17 +185,19 @@ def sync_huntr_to_sheet() -> int:
 
 
 def is_candidate(row: Row) -> bool:
-    """A row needs a CV when it has a link, no CV No yet, and a non-skip Başvuru.
+    """A row needs a CV when it has a link, no CV No yet, and B says "Üretilecek".
 
-    The CV No (column N) is the single source of truth: filled = done, empty = to do.
-    This makes 'delete row + re-add the same job' work — the fresh row has an empty N
-    so it is processed again, regardless of any past run.
+    Two conditions, not one. Column N (CV No) still answers "was this already made?" —
+    filled = done, empty = to do — which is what makes 'delete row + re-add the same job'
+    work. But an empty N is no longer enough to spend a generation: the Başvuru column (B)
+    has to carry a CV_TRIGGER_BASVURU_VALUES value, which the user sets when actually
+    applying. A row added from the panel arrives with B empty and simply waits.
     """
     if not row.link:
         return False
     if row.cv_no:  # already has a CV number
         return False
-    if row.basvuru in SKIP_BASVURU_VALUES:
+    if row.basvuru not in CV_TRIGGER_BASVURU_VALUES:
         return False
     return True
 
@@ -270,7 +273,12 @@ def _scrape_fields(row: Row, scraper: Scraper, allow_staged: bool = False):
     from it instead of propagating the error — the CV is then grounded in exactly what
     the user read in the panel. City/work type/easy-apply stay empty, which is harmless:
     _fill_page_fields skips empty values, so the J/L written at append time survive.
-    Only the CV path passes True (see _process_info_only).
+
+    OFF by default, including on the CV path. Since the trigger moved to B == "Üretilecek"
+    the user marks a row at application time, so a failed scrape most likely means the
+    posting is gone — and a CV for a posting nobody can apply to is exactly the waste the
+    deferred trigger exists to stop. run_scan writes EXPIRED_MARKER instead. Pass True
+    (run_once.py --allow-staged) to force one out of the staged text anyway.
     """
     try:
         jp = scraper.fetch_job(row.link)
@@ -307,17 +315,17 @@ def _scrape_fields(row: Row, scraper: Scraper, allow_staged: bool = False):
 
 
 def _generate_and_save(
-    row: Row, cv_no: int, scraper: Scraper
-) -> tuple[float | None, dict, str]:
-    """Scrape the page (description + fields), generate the CV, save outputs.
+    row: Row, cv_no: int, jp: JobPage
+) -> tuple[float | None, str]:
+    """Generate the CV from an already-fetched page and save its outputs.
 
-    Returns (match_rate, fields, languages) where fields are the column values to write
-    (only-empty) to the sheet and languages is the job's top two priority programming
-    languages ("Python, Java") for column Q. G (work mode) is intentionally NOT inferred —
-    it is filled manually — so the relocation sentence uses the row's existing G if set.
+    The scrape happens in run_scan, not here: a scrape failure and a generation failure
+    need different endings (EXPIRED_MARKER vs. retry next scan), and folding both into one
+    try block made them indistinguishable. Returns (match_rate, languages) — the job's top
+    two priority programming languages ("Python, Java") for column Q. G (work mode) is
+    intentionally NOT inferred — it is filled manually — so the relocation sentence uses
+    the row's existing G if set.
     """
-    jp, fields = _scrape_fields(row, scraper, allow_staged=True)
-
     work_mode = row.work_mode  # manual (often empty -> default relocation sentence)
     city = row.city or jp.city
     full_response, cv_md, match_rate = generator.generate(
@@ -347,7 +355,7 @@ def _generate_and_save(
         (settings.analysis_dir / f"cv_{cv_no}_review.md").write_text(review_full, encoding="utf-8")
     _export_google_doc(cv_no, cv_md)
 
-    return match_rate, fields, languages
+    return match_rate, languages
 
 
 def _regenerate_one(cv_no: int, row: Row, instruction: str = "") -> float | None:
@@ -491,11 +499,15 @@ def run_scan(
     dry_run: bool = False,
     limit: int | None = None,
     only_row: int | None = None,
+    allow_staged: bool = False,
 ) -> int:
     """Scan the sheet once and process candidate rows. Returns count processed.
 
-    limit:    process at most this many candidates (sheet order).
-    only_row: process only this sheet row number (must still be a candidate).
+    limit:        process at most this many candidates (sheet order).
+    only_row:     process only this sheet row number (must still be a candidate).
+    allow_staged: fall back to the panel's staged description when the posting can no
+                  longer be fetched, instead of marking the row EXPIRED_MARKER. Off by
+                  default — see _scrape_fields.
     """
     sheets = SheetsClient()
     # Staged descriptions whose row was deleted or never generated. Cheap (the directory
@@ -509,9 +521,9 @@ def run_scan(
         if not candidates:
             logger.warning(
                 "Row %d is not a candidate (check: has link? CV No (N) empty? "
-                "Başvuru not in %s?).",
+                "Başvuru (B) one of %s?).",
                 only_row,
-                sorted(SKIP_BASVURU_VALUES),
+                sorted(CV_TRIGGER_BASVURU_VALUES),
             )
     if limit is not None:
         candidates = candidates[:limit]
@@ -535,25 +547,54 @@ def run_scan(
     # Never go below the highest number we've ever assigned (floor guard).
     next_no = max(sheets.next_cv_number(rows), load_last_cv_no() + 1)
     count = 0
+    expired = 0
+    failed = 0
     with Scraper(headless=True) as scraper:
         for row in candidates:
             cv_no = next_no
             logger.info("Processing row %d -> CV No %d -> %s", row.number, cv_no, row.link)
 
-            # 1) Generate first, WITHOUT touching the sheet yet. This gives any of your
-            #    own edits to this row (B/C/F/G/H...) ~1.5 min to sync to Drive before
-            #    the app writes, and means we touch the sheet only once (less clobbering).
+            # 1) Fetch the posting. A failure here means the posting is (most likely) gone:
+            #    close the row with EXPIRED_MARKER so it stops being a candidate, and spend
+            #    no Claude call and no CV number on it. This is the point of the deferred
+            #    trigger — the user marked this row while applying, so if the page is dead
+            #    the application is off the table anyway.
             try:
-                match_rate, fields, languages = _generate_and_save(row, cv_no, scraper)
+                jp, fields = _scrape_fields(row, scraper, allow_staged=allow_staged)
+            except Exception as exc:  # noqa: BLE001
+                logger.warning(
+                    "Posting unavailable for row %d (%r); marking N=%r, no CV made.",
+                    row.number, exc, EXPIRED_MARKER,
+                )
+                record_failure("expired", row=row.number, link=row.link, error=repr(exc))
+                try:
+                    sheets.write_info_only_row(row.number, {}, EXPIRED_MARKER)
+                    expired += 1
+                except Exception as write_exc:  # noqa: BLE001
+                    logger.exception(
+                        "Could not mark row %d as expired; will retry next scan.", row.number
+                    )
+                    record_failure(
+                        "sheet_write", row=row.number, link=row.link, error=repr(write_exc)
+                    )
+                    failed += 1
+                continue
+
+            # 2) Generate WITHOUT touching the sheet yet. This gives any of your own edits
+            #    to this row (B/C/F/G/H...) ~1.5 min to sync to Drive before the app writes,
+            #    and means we touch the sheet only once (less clobbering).
+            try:
+                match_rate, languages = _generate_and_save(row, cv_no, jp)
             except Exception as exc:  # noqa: BLE001
                 logger.exception(
                     "Generation failed for row %d; number not consumed, will retry next scan.",
                     row.number,
                 )
                 record_failure("generate", row=row.number, link=row.link, error=repr(exc))
+                failed += 1
                 continue
 
-            # 2) Single sheet write at the end: page-derived fields (only-empty) +
+            # 3) Single sheet write at the end: page-derived fields (only-empty) +
             #    CV No (N) + Match Rate (P) + priority languages (Q) together.
             try:
                 sheets.write_processed_row(
@@ -572,7 +613,11 @@ def run_scan(
                     row.number,
                 )
                 record_failure("sheet_write", row=row.number, cv_no=cv_no, link=row.link, error=repr(exc))
+                failed += 1
                 continue
 
             count += 1
+    logger.info(
+        "Scan complete: %d CV(s) generated, %d expired, %d failed.", count, expired, failed
+    )
     return count

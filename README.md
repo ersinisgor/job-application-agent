@@ -13,11 +13,18 @@ Her yeni satır için:
 
 ## Tetikleme kuralı
 
-Bir satır şu durumda işlenir: **K (link) dolu**, **N (CV No) boş** ve **B (Başvuru)**
-sütunu `Geçmiş` / `Vazgeçildi` / `✓` *değil* (yani `+`, `++` veya boş).
+Bir satır şu durumda işlenir: **K (link) dolu**, **N (CV No) boş** ve **B (Başvuru) = `Üretilecek`**.
 
-Satırı elle girebilirsin, ama normal yol extension panelindeki **Ekle** butonudur: ilandayken
-bir tık, satır (link + pozisyon + firma) tabloya düşer ve poller devralır.
+CV üretimi ilanı eklerken değil, **başvurmaya karar verdiğinde** olur. Sebebi: eklenen ilana
+çoğu zaman aynı gün başvurulamıyor, sıra geldiğinde ilan kalkmış oluyor ve hiç başvurulmayacak
+ilanlara CV üretilmiş oluyordu. Akış:
+
+1. İlandayken panelin **Ekle** butonu → satır (link + pozisyon + firma) tabloya düşer, B boş kalır.
+2. Başvuracağın gün → o satırın **B** sütununu dropdown'dan `Üretilecek` yap.
+3. Üret → `scripts/cv_uret.command` dosyasına çift tıkla (ya da poller açıksa ~20 sn içinde kendi alır).
+
+İşaretli satırın ilanı o an yayından kalkmışsa CV üretilmez: N sütununa `Kalkmış` yazılır, CV
+numarası harcanmaz. Yine de üretmek istersen: `run_once.py --row <satır> --allow-staged`.
 
 ## Kurulum
 
@@ -84,10 +91,12 @@ Sürekli izleme (polling):
 python -m src.applyjobs.main
 ```
 
-Tek seferlik tarama (cron/test için):
+Tek seferlik tarama — normal kullanım (Finder'dan `scripts/cv_uret.command`'a çift tıklamak da
+aynı şeyi yapar):
 ```bash
-python scripts/run_once.py            # aday satırları işler
+python scripts/run_once.py            # "Üretilecek" işaretli satırları işler
 python scripts/run_once.py --dry-run  # sadece listeler, hiçbir şey yazmaz
+python scripts/run_once.py --row 250 --allow-staged  # ilan kalkmış: panelin kaydettiği metinden üret
 ```
 
 ## Üretilen dosyalar
@@ -131,16 +140,16 @@ extension'ı (MV3). Özetleme, bu projeye entegre bir FastAPI servisi (`src/appl
 `CLAUDE_MODEL`'inden ayrıdır). Çıkarılan alanlar: Rol Özeti, Çalışma Şekli, Vize/Sponsorluk, Birincil/
 İkincil Dil, Araçlar, Framework'ler, Kütüphaneler, Min. Deneyim.
 
-Panelde ayrıca **Ekle** butonu vardır: ilanı tabloya ekler (link/pozisyon/firma) ve CV No'yu boş
-bırakır, böylece CV poller onu devralır. Buton API'ye, CV ise poller'a ihtiyaç duyduğu için normal
-çalıştırma yolu `./scripts/start.sh`'tir.
+Panelde ayrıca **Ekle** butonu vardır: ilanı tabloya ekler (link/pozisyon/firma), B ve CV No'yu
+boş bırakır. **CV üretmez** — üretim için B sütununu `Üretilecek` yapman gerekir (yukarıdaki
+"Tetikleme kuralı"). Buton yalnızca API'ye ihtiyaç duyar.
 
 **Tek komutla başlat (API + CV poller birlikte, Ctrl+C ikisini durdurur):**
 ```bash
 ./scripts/start.sh
 ```
 Yalnız özet API'sini çalıştırmak için: `./.venv/bin/python scripts/run_summary_api.py`
-(bu durumda **Ekle** satırı ekler ama CV üretilmez.)
+(**Ekle** zaten CV üretmez; CV'yi `Üretilecek` işareti + `cv_uret.command` üretir.)
 
 **Extension'ı yükle (bir kez):** `chrome://extensions` → Developer mode → **Load unpacked** →
 `job-apply-agent/extension` klasörünü seç. Ardından `https://www.linkedin.com/jobs/` sayfasında bir ilana
