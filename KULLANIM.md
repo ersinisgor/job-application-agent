@@ -112,6 +112,63 @@ CLAUDE_MODEL=claude-opus-4-8 CLAUDE_EFFORT=high ./.venv/bin/python scripts/regen
 
 ---
 
+## Cover letter (Mektup) — istek üzerine, tek tek
+
+Her başvuru cover letter istemediği için mektuplar CV ile birlikte üretilmez; **sen istediğinde,
+tek bir iş için** üretilir. Mektup; o işe özel üretilmiş **CV'den + kaydedilmiş ilan
+açıklamasından + `config/projects.md`'den** yazılır — yani ilan yayından kalkmış olsa bile çalışır,
+LinkedIn'e tekrar gidilmez.
+
+**Yol 1 — panelden (en pratik):** LinkedIn'de o ilandayken paneldeki **Mektup** butonuna bas.
+
+| Panelde ne var | Ne yapar |
+|----------------|----------|
+| `EN` / `TR` | mektubun dili — ikisi **ayrı** mektuptur, TR'ye basmak EN'i geri vermez |
+| `Kopyala` | mektubu panoya kopyalar (ayrı bir tık olması gerekiyor, tarayıcı kuralı) |
+| `Yeniden üret` | kayıtlı mektubu **silip** yeniden yazdırır |
+| `Mektup` (tekrar) | mektup görünümünü kapatır, özete döner |
+
+Başlıkta `CV 312 · kayıtlı mektup` ya da `· yeni üretildi` yazar. Buton **API'ye** ihtiyaç duyar
+(`./scripts/start_api.sh` veya `start.sh`).
+
+**Yol 2 — terminalden:**
+
+```bash
+cd /Users/mac/code/ersinisgor/job-apply-agent
+./.venv/bin/python scripts/cover_letter.py --cv-no 305             # İngilizce, panoya kopyalar
+./.venv/bin/python scripts/cover_letter.py --cv-no 305 --lang tr   # Türkçe
+./.venv/bin/python scripts/cover_letter.py --cv-no 305 --force     # yeniden üret, üzerine yaz
+./.venv/bin/python scripts/cover_letter.py --cv-no 305 --no-copy   # panoya dokunma
+```
+
+**Bilinmesi gerekenler:**
+
+- **Dosyanın kendisi önbellektir.** Mektup `~/Desktop/İş Arama/Job Applications/2026/Cover Letters/`
+  altına `cover_letter_<no>_<dil>.md` olarak yazılır. Aynı iş+dil için tekrar istersen model
+  çağrılmaz, kayıtlı dosya verilir. Yeniden yazdırmanın tek yolu `--force` / **Yeniden üret**.
+- **Kimlik (iş, dil) çiftidir:** `cover_letter_305_en.md` ve `cover_letter_305_tr.md` iki ayrı
+  mektuptur.
+- **Yalnızca CV No ≥ 200 için üretilebilir.** Daha eski işlerde ne `cv_<no>.md` ne de
+  `job_description_<no>.md` saklanmış, dayanacak bir şey yok.
+- **Sheet'te J (Firma) ve L (Pozisyon) dolu olmalı** — yanlış şirket adı taşıyan bir mektup işe
+  yaramaz, o yüzden tahmin etmek yerine hata verir.
+- **İmza hazır gelir** (`Saygılarımla, / Best regards, + Ersin Isgor`), dosyanın başındaki
+  `<!-- cv_no: … -->` künye satırı panoya/panele **geçmez**.
+- **Dürüstlük kuralı burada da geçerli:** `projects.md` yalnızca senin kendi projelerine *detay*
+  ekleyebilir (hangi teknoloji, nasıl kurgulanmış); yeni bir işveren/görev/metrik ekleyemez ve
+  kişisel bir projeyi profesyonel deneyim gibi gösteremez.
+- **Uzunluk 150-200 kelime**, maliyet mektup başına ~$0.05.
+
+**Panelde çıkabilecek hatalar:**
+
+| Mesaj | Anlamı |
+|-------|--------|
+| `Bu ilan (…) tabloda yok — önce "Ekle" ile ekle.` | satır hiç eklenmemiş |
+| `Bu ilan tabloda (satır …) ama CV'si henüz üretilmedi.` | B'yi `Üretilecek` yapıp CV'yi üretmen gerekiyor |
+| `… 200'den küçük CV'ler için mektup üretilemiyor.` | eski iş, kaynak dosyalar yok |
+
+---
+
 ## CV'ye ne eklenebilir, ne eklenemez?
 
 CV'nin her satırını mülakatta savunabilmen gerekiyor. Prompt ilandaki her anahtar kelimeyi
@@ -185,7 +242,8 @@ N sütunu hâlâ "yapıldı mı?" sorusunun cevabı: doluysa satır bir daha iş
 | `cv_<no>` (Google Doc) | Drive → Resumes based on Jobs |
 | `cv_<no>_analysis.md` | .../2026/CV_Analysis |
 | `job_description_<no>.md` | .../2026/Job Description |
-| CV No → N sütunu, Match Rate → P sütunu | Drive'daki tablo |
+| `cover_letter_<no>_<dil>.md` | .../2026/Cover Letters (yalnızca istediğinde — bkz. [Cover letter](#cover-letter-mektup--istek-üzerine-tek-tek)) |
+| CV No → N sütunu, Match Rate → P sütunu, Yazılım Dili → Q sütunu | Drive'daki tablo |
 
 ---
 
@@ -274,6 +332,9 @@ cd /Users/mac/code/ersinisgor/job-apply-agent
 
 **3. Kullan:** `https://www.linkedin.com/jobs/` sayfasında bir ilana tıkla → sağ panelde Türkçe özet.
 Başka ilana geçince güncellenir; daha önce baktığın ilana dönünce anında (önbellekten) gelir.
+
+**Paneldeki butonlar:** `Ekle` (ilanı tabloya yaz — CV üretmez, yukarı bak) ve `Mektup` (o iş için
+cover letter — [Cover letter bölümü](#cover-letter-mektup--istek-üzerine-tek-tek)).
 
 **Sık durumlar:**
 - Panelde **"Backend unreachable…"**: `./scripts/start.sh` (veya `run_summary_api.py`) çalışmıyor.
