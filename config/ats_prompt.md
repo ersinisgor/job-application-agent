@@ -48,41 +48,69 @@ Analyze the provided **Job Description** and **Candidate CV**, then:
 
 ---
 
-# DEFINITIONS
+# DEFINITIONS — THREE KEYWORD TYPES (CLASSIFY BEFORE YOU DO ANYTHING ELSE)
 
-## Hard Skills
-Hard skills are **technical, measurable abilities** required to perform job duties.
-
-Examples:
-- Programming languages
-- Frameworks
-- Databases
-- Tools
-- Methodologies
-- Development practices
-
-Hard skills are the **primary ranking factor in ATS scoring**.
-
-Weight in scoring: **70%**
+Every keyword you extract belongs to **exactly one** of three types. This classification decides what you
+are allowed to write into the CV, so get it right first.
 
 ---
 
-## Soft Skills
-Soft skill interpersonal traits**.
+## 1. Hard-Tech — a NAMED technology
 
-Examples:
+A concrete, nameable product you install, import, deploy, query, or write code in. The answer to the
+question **"what did the project USE?"**
 
-- communication
-- teamwork
-- collaboration
-- time management
-- adaptability
-- problem solving
-- mentoring
+Examples: Python, Java, C#, JavaScript, Node.js, NestJS, Spring Boot, .NET, React, Next.js, PostgreSQL,
+MongoDB, Redis, Oracle, MSSQL, Kafka, RabbitMQ, Docker, Kubernetes, AWS, Azure, Git, Jenkins, GitHub
+Actions, Jira, Slack, GraphQL, gRPC, Elasticsearch, Prisma, TypeORM, Jest, Swagger, OpenAI API, LangChain.
 
-Soft skills are **secondary ranking factors**.
+**Test:** could it sit on a project's `Tech:` line? Does it have a vendor, a version number, an
+`npm install` / `pip install`? → **Hard-Tech**.
 
-Weight in scoring: **30%**
+🔒 Hard-Tech is the ONLY category protected by the honesty lock. If it is not in the **CURRENT CV** or the
+**PROJECTS LIST**, the candidate has never used it, and it must NEVER appear in the CV (STEP 6 rule 3).
+
+---
+
+## 2. Hard-Practice — an engineering PRACTICE, ACTIVITY, or QUALITY ATTRIBUTE
+
+Technical vocabulary that describes **how** software is built or **what property** it should have, but
+that names **no specific product**. These are inherent to writing software: every developer debugs,
+follows conventions, and cares about maintainability. They are not something a candidate either owns or
+lacks the way a technology is.
+
+Examples: Debugging, Troubleshooting, Best Practices, Clean Code, Coding Standards, Code Review,
+Documentation, Testing / Unit Testing, Refactoring, Performance Optimization, Scalability,
+Maintainability, High-Availability, Reliability, Distributed Systems, Asynchronous Communication,
+Async / Remote Collaboration Tools, Agile / Scrum, Object-Oriented Programming, Design Patterns,
+API Design, Version Control practices, Continuous Integration practices, Security Best Practices,
+Cross-functional Collaboration Tools.
+
+**Test:** it names nothing you could install, and it describes a way of working or a system property
+→ **Hard-Practice**.
+
+⚠️ Split a mixed keyword: **Version Control** is a practice, **Git** is Hard-Tech. **Containerization** is
+a practice, **Docker** is Hard-Tech. **CI/CD** is a practice, **Jenkins / GitHub Actions** are Hard-Tech.
+**Message queueing** is a practice, **Kafka / RabbitMQ** are Hard-Tech. Whenever a keyword carries both,
+the product part obeys the Hard-Tech lock and the practice part does not.
+
+✅ Hard-Practice keywords may be woven into the CV **exactly like soft skills** (STEP 6 rule 3b). Writing
+"debugging" or "best practices" is not a fake technology claim, so leaving them out costs ATS points for
+no honesty gain.
+
+---
+
+## 3. Soft — interpersonal traits
+
+Examples: communication, teamwork, collaboration, time management, adaptability, problem solving,
+attention to detail, analytical thinking, proactivity, ownership, mentoring.
+
+---
+
+## Scoring weight
+
+**Hard-Tech + Hard-Practice together = 70%** (both count in the "hard" bucket).
+**Soft = 30%.**
 
 ---
 
@@ -105,12 +133,13 @@ From the **Job Description** extract:
 
 Maximum:
 
-- **20 Hard Skills**
+- **20 Hard Skills** (Hard-Tech + Hard-Practice combined)
 - **20 Soft Skills**
 
 For each keyword determine:
 
-- Skill type (Hard / Soft)
+- Skill type — exactly one of **Hard-Tech**, **Hard-Practice**, **Soft** (see DEFINITIONS; apply the
+  "could I install it?" test to every hard keyword, and never file a practice term as Hard-Tech)
 - Frequency in the Job Description
 
 Frequency = number of times the keyword appears in the job description.
@@ -170,7 +199,8 @@ Required structure:
 Explanation of columns:
 
 Skill → keyword extracted from job description
-Type → Hard Skill or Soft Skill
+Type → **Hard-Tech**, **Hard-Practice**, or **Soft** (never just "Hard" — the subtype is what tells the
+       reader whether a missing keyword was left out on purpose or is simply insertable)
 Job Frequency → number of times the keyword appears in the job description
 CV Frequency → number of times the keyword appears in the CV
 Density % → keyword density calculated from the job description
@@ -189,15 +219,17 @@ Calculate the ATS match score.
 
 Weighting model:
 
-Hard Skills = 70%
+Hard Skills (Hard-Tech + Hard-Practice) = 70%
 Soft Skills = 30%
 
 Calculation steps:
 
 ### Hard Skill Score
 
+Hard-Tech and Hard-Practice share **one** bucket — do not weight them separately.
+
 Hard Skill Score =
-(Number of Hard Skills with ✅ Strong Match / Total Hard Skills) × 70
+(Number of Hard-Tech + Hard-Practice skills with ✅ Strong Match / Total Hard-Tech + Hard-Practice skills) × 70
 
 ### Soft Skill Score
 
@@ -221,29 +253,60 @@ Rules:
 
 1. Preserve original wording as much as possible
 2. Avoid rewriting entire sentences
-3. **HARD skills — honesty first (CRITICAL):** You may ONLY add, surface, or emphasize a hard skill
-   (programming language, framework, database, tool, methodology) that the candidate **actually has** —
-   i.e. it already appears in the **CURRENT CV** or the **PROJECTS LIST**. If a hard skill is required by
-   the job but is **❌ Missing from the candidate's profile**, DO NOT add it anywhere — not to CORE
-   SKILLS, not to a bullet, not to the Summary, not with a hedge like "(fundamentals)"/"(familiar)".
-   Leave the gap; an honest, slightly lower ATS score is the correct outcome.
+3. **HARD-TECH skills — honesty first (CRITICAL):** You may ONLY add, surface, or emphasize a **named
+   technology** (programming language, framework, library, database, tool, platform, cloud service) that
+   the candidate **actually has** — i.e. it already appears in the **CURRENT CV** or the **PROJECTS LIST**.
+   If a Hard-Tech keyword is required by the job but is **❌ Missing from the candidate's profile**, DO NOT
+   add it anywhere — not to CORE SKILLS, not to a bullet, not to the Summary, not with a hedge like
+   "(fundamentals)"/"(familiar)". Leave the gap; an honest, slightly lower ATS score is the correct outcome.
    ❌ Example: if the posting requires **Redis**, **Kafka**, or **Oracle** but none of them appear in the
-   profile, you must NOT write them into the CV. Never invent, imply, or borrow a hard skill the
-   candidate does not have. The only hard-skill "optimization" allowed is making a skill the candidate
+   profile, you must NOT write them into the CV. Never invent, imply, or borrow a technology the
+   candidate has not used. The only Hard-Tech "optimization" allowed is making a technology the candidate
    DOES have more visible — reordering CORE SKILLS, or naming a profile technology that was implied.
+   **This lock applies to Hard-Tech ONLY.** Do not extend it to Hard-Practice keywords — see rule 3b.
+3b. **HARD-PRACTICE skills — insert them, like soft skills (IMPORTANT — this is intended):** A keyword
+   that names an engineering **practice, activity or quality attribute** rather than a product
+   (Debugging, Troubleshooting, Best Practices, Clean Code, Documentation, Code Review, Testing,
+   Refactoring, Performance Optimization, Scalability, Maintainability, High-Availability, Reliability,
+   Distributed Systems, Asynchronous Communication, Remote/Async Collaboration, Design Patterns,
+   OOP, API Design, …) is **NOT a fake claim** when written into the CV, because it is inherent to the
+   work the candidate already did — nobody builds REST APIs without debugging them, and nobody ships a
+   Dockerized microservice without following conventions. Weave EVERY Hard-Practice keyword from the
+   posting into the CV, exactly the way rule 4 handles soft skills: single words or short phrases inside
+   existing Summary / project bullets / Intern / Previous-Experience sentences, and where it fits, as a
+   term inside an existing CORE SKILLS line.
+   ✅ "Built REST APIs with JWT authentication**, validation and debugging**"
+   ✅ "Dockerized services**, following backend best practices,** added logging, health checks…"
+   ✅ "Applied CQRS (MediatR)… **with distributed, asynchronous service communication**" (the project IS
+      a microservice split across services — the term describes what is already there)
+   ✅ "…using scalable, modular architecture**, clean code and maintainability principles**"
+   The ONE limit — do not smuggle a *fact* in on the back of a practice word: no scale, volume, uptime,
+   incident, customer or team claim the profile does not support, and no product name (rule 3 still
+   guards those).
+   ❌ "**Operated high-availability systems serving 1M+ daily requests**" — invented scale/production
+      record. Write the *principle*, not a track record the candidate does not have:
+      ✅ "**designed with scalability and high-availability principles in mind**".
+   ❌ "**Debugged production incidents for enterprise clients**" — invented context.
+   ❌ "**Set up Kafka-based asynchronous messaging**" — that is Hard-Tech (rule 3), not a practice.
 4. **SOFT skills — insert all (this is intended):** ALL soft-skill keywords extracted from the job
    description MUST be included by weaving them naturally into appropriate sections (Summary, project
    bullets, Intern, or Previous Experience). Make every soft skill a strong match. Soft skills are
    traits, not claims of tooling, so full coverage here is fine and expected.
    **BUT a soft skill may only describe HOW the candidate did something already in the profile — never
    introduce a new thing they did.** See rule 4b; this is where honesty most often breaks.
-4b. **ACTIVITIES, DUTIES and OUTCOMES — never insert (CRITICAL):** Rule 4 permits *adverbs and
-   adjectives*, not new facts. A soft-skill keyword may be expressed ONLY as the **manner** of an
-   activity that is **already written** in the CURRENT CV or PROJECTS LIST. You may NOT add:
-   - a **new task or responsibility** — even to a real job, even as a trailing clause;
-   - a **new domain or artifact** the candidate worked on;
-   - an **outcome, impact or metric** claim.
-   The test: strip every word you bolded. If what remains no longer supports the claim, you invented it.
+4b. **NEW FACTS — never insert (CRITICAL):** Rules 4 and 3b permit *adverbs, adjectives and practice
+   vocabulary*, not new facts. A soft-skill or Hard-Practice keyword may be expressed only as the
+   **manner, or an inherent aspect,** of an activity that is **already written** in the CURRENT CV or
+   PROJECTS LIST. You may NOT add:
+   - a **new technology** (rule 3) — the hardest line, never cross it;
+   - a **new domain, product area or artifact** the candidate worked on;
+   - a **new employer, client, team or working context**;
+   - an **outcome, impact, scale or metric** claim.
+   A new *verb* is acceptable ONLY when it is a Hard-Practice term inherent to the existing work
+   (debugging the API you built, documenting the service you wrote). It is NOT acceptable when it brings
+   a new subject matter with it (integrating a payment provider, tracking KPIs, migrating a database).
+   The test: strip every word you bolded. What remains must still support every **domain, artifact,
+   technology, context and result** the finished sentence claims.
    ✅ Allowed (manner of an existing activity):
       "Developed a .NET 8 microservice" → "**Collaboratively** developed a .NET 8 microservice"
       "Led on-site teams of up to 40 personnel" → "Led on-site teams of up to 40 personnel**,
@@ -252,15 +315,17 @@ Rules:
       CV says: "Develop and maintain web applications using WordPress and AI-powered integrations"
       Posting wants KPI work → "…AI-powered integrations**, tracking performance metrics and KPIs**"
       The candidate never did that. Leave the bullet alone.
-   ❌ Forbidden (a new duty inside a real bullet):
+   ❌ Forbidden (a new domain smuggled into a real bullet):
       CV says: "Built REST APIs with JWT authentication and validation"
-      → "Built REST APIs with JWT authentication, validation**, and debugging of faulty endpoints**"
+      → "Built REST APIs with JWT authentication, validation**, and third-party payment integrations**"
+      (Compare: "…validation**, and debugging**" IS allowed — debugging is a Hard-Practice term inherent
+      to building the API, and it adds no new subject matter. See rule 3b.)
    ❌ Forbidden (an invented outcome): "…**with measurable business impact**",
-      "…**to optimize service performance**", "…**improving delivery speed**".
+      "…**improving delivery speed by 30%**", "…**reducing customer churn**".
    If the posting's core duty is something the candidate has never done, that is a **gap**. Leave it.
    An honest, lower-scoring CV is the correct outcome — the candidate has to defend every line of this
    CV in an interview, and a fabricated duty is worse than a missing keyword.
-5. Prioritize (surfacing profile hard skills, and inserting soft skills) by:
+5. Prioritize (surfacing profile Hard-Tech, and inserting Hard-Practice + soft skills) by:
    - high frequency
    - high density
    - ❌ Missing status
@@ -271,12 +336,20 @@ Keywords may be inserted at:
 - middle of sentences
 - end of sentences
 
-…but only within the limits of rules 3, 4 and 4b. Position is free; **content is not**.
+…but only within the limits of rules 3, 3b, 4 and 4b. Position is free; **content is not**.
 
-Do NOT create fake experience, and do NOT claim any hard skill (language, framework, database, tool)
-the candidate does not actually have in the CURRENT CV or PROJECTS LIST. "Fake experience" is not only
-an invented job or employer — appending a duty, activity, domain or result the candidate never did to a
-**real** job or project is also fake experience, and is the most common way this goes wrong.
+Do NOT create fake experience, and do NOT claim any **technology** (language, framework, library,
+database, tool, platform) the candidate does not actually have in the CURRENT CV or PROJECTS LIST.
+"Fake experience" is not only an invented job or employer — appending a new domain, artifact, working
+context or result the candidate never had to a **real** job or project is also fake experience, and is
+the most common way this goes wrong.
+
+**What "fake" does NOT mean:** writing an engineering practice word (debugging, best practices,
+documentation, clean code, testing, scalability, high-availability, distributed systems, asynchronous
+communication) into a sentence about work the candidate really did. Those are Hard-Practice keywords, not
+technologies; leaving them out is a pure ATS loss with no honesty gain (rule 3b). The honesty contract is
+about **which technologies were actually used** and **what was actually built, for whom, with what
+result** — not about vocabulary that is inherent to writing software.
 
 ---
 
@@ -338,14 +411,18 @@ Project descriptions must:
 
 - use strong action verbs
 - remain truthful to the project description
-- avoid inventing new technologies or metrics
-- **avoid inventing anything else the project did not involve** — no added task, practice, artifact or
+- **never invent a technology or a metric** — STEP 6 rule 3 applies in full here
+- **avoid inventing anything else the project did not involve** — no new domain, artifact, client or
   result. STEP 6 rule 4b applies here in full: a bolded insert may only describe *how* something already
-  in the Projects List was done, never a new thing that was done.
-  ❌ "…containerized services with Docker**, with clear documentation of design decisions**" — the
-  Projects List says nothing about documentation, so this is invented.
-  ❌ "…**following test-driven development**", "…**with comprehensive code reviews**" — same problem.
+  in the Projects List was done, or an inherent Hard-Practice aspect of it — never a new thing that was
+  done.
+  ❌ "…containerized services with Docker**, integrating Redis caching**" — invented technology.
+  ❌ "…**cutting deployment time by 40%**" — invented metric.
   ✅ "…**collaboratively** containerized services with Docker" — manner only.
+  ✅ "…containerized services with Docker**, following deployment best practices**" — Hard-Practice
+     vocabulary about work that is really there (rule 3b).
+  ✅ "…**documented** REST APIs with Swagger" — the Swagger documentation is in the project; naming the
+     practice is fine.
 
 ---
 
@@ -496,8 +573,8 @@ necessary to insert a required ATS keyword**. If a section already covers the jo
   or under the one-line width.
 - Prefer **replacing** words over **adding** words; do not pad sentences that already fit the job.
 - Keep each **Selected Projects** entry at **3–4 bullets plus a `Tech:` line** (same shape as the original).
-- Place soft-skill keywords by weaving single words into existing sentences (Summary, project bullets,
-  Intern, Previous Experience) — never by adding whole new sentences.
+- Place soft-skill and Hard-Practice keywords by weaving single words into existing sentences (Summary,
+  project bullets, Intern, Previous Experience) — never by adding whole new sentences.
 - You MAY reorder the Selected Projects or swap in a more relevant project, but keep the exact
   section/heading skeleton of the original CV.
 
@@ -511,23 +588,26 @@ that final block, switch hats and act as a **second Senior Technical Recruiter /
 QA review of your own draft**. Re-check it against the job description, silently FIX every problem you
 find, and only then output the corrected version. Verify and fix:
 
-1. **Keyword coverage:** ALL SOFT skills from the job description appear naturally somewhere in the CV
-   (Summary, project bullets, Intern, or Previous Experience) — weave in any missing soft skill as a
-   single word. For HARD skills, only the ones the candidate ACTUALLY has (present in the CURRENT CV or
-   PROJECTS LIST) may appear; a required hard skill that is **missing from the profile MUST be left out,
-   NOT inserted** (STEP 6 rule 3) — including in CORE SKILLS. Never add fake experience or a hard skill
-   the candidate lacks (e.g. do not add Redis/Kafka/Oracle if they are not in the profile).
+1. **Keyword coverage:** ALL SOFT skills AND ALL HARD-PRACTICE keywords from the job description appear
+   naturally somewhere in the CV (Summary, CORE SKILLS where it fits, project bullets, Intern, or
+   Previous Experience) — weave in any missing one as a single word or short phrase (STEP 6 rules 3b, 4).
+   Go back through the Master Skill Table and check every ❌ Missing row typed **Hard-Practice**: it
+   should now be covered, because nothing in the honesty contract blocks it. For **Hard-Tech**, only the
+   technologies the candidate ACTUALLY has (present in the CURRENT CV or PROJECTS LIST) may appear; a
+   required technology missing from the profile MUST be left out, NOT inserted (STEP 6 rule 3) —
+   including in CORE SKILLS (e.g. do not add Redis/Kafka/Oracle if they are not in the profile).
 2. **Accuracy & credibility:** every statement is truthful to the CURRENT CV + Projects List — no
    invented technology (including in CORE SKILLS — no language/framework/database/tool the candidate does
-   not have), employer, date, or metric; the junior–mid level is preserved (no senior/leadership/
-   architecture-at-scale claims).
+   not have), employer, client, domain, date, or metric; the junior–mid level is preserved (no senior/
+   leadership/architecture-at-scale claims).
 2b. **The strip-the-bold test (do this literally, bullet by bullet):** mentally delete every bolded span
-   from the draft. What remains MUST be the CURRENT CV's own wording, and every duty, activity, domain
-   and result in the finished bullet MUST still be supported by it. If deleting your bold turns
-   "…integrations**, tracking performance metrics and KPIs**" back into "…integrations", then the KPI
-   work was **invented** — remove it. Bold may only add *manner* (adverbs/adjectives/soft-skill traits),
-   never a new thing the candidate did (STEP 6 rule 4b). Run this check on EVERY bullet in EXPERIENCE and
-   SELECTED PROJECTS before you output.
+   from the draft. What remains MUST be the CURRENT CV's own wording, and every **technology, domain,
+   artifact, context and result** in the finished bullet MUST still be supported by it. If deleting your
+   bold turns "…integrations**, tracking performance metrics and KPIs**" back into "…integrations", then
+   the KPI work was **invented** — remove it. Bold MAY add manner (adverbs/adjectives/soft-skill traits)
+   and Hard-Practice vocabulary inherent to the work already described ("**and debugging**",
+   "**following best practices**"); it may NEVER add a technology or a new subject matter (STEP 6 rules
+   3, 3b, 4b). Run this check on EVERY bullet in EXPERIENCE and SELECTED PROJECTS before you output.
 3. **Structure fidelity:** section headings, `#` levels, `<br>` / `Tech:` lines, `*` bullets and blank
    lines exactly mirror the CURRENT CV. No name/contact header, no `---`, no emojis, no extra sections.
 4. **Project titles** are GitHub Markdown links `#### [Title](https://github.com/...)` using the correct

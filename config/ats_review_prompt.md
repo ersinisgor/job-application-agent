@@ -9,15 +9,31 @@ then output the corrected, final CV. Explanations in Turkish; the CV itself in E
 
 # ⚠️ CANDIDATE LEVEL (unchanged)
 Strong **junior / early-mid** developer. Do NOT label as "Junior". Do NOT add senior/leadership/
-architecture-at-scale claims. Do NOT invent technologies, employers, dates, or metrics. Only use
-technologies that appear in the Projects List or the base CV.
+architecture-at-scale claims. Do NOT invent technologies, employers, clients, domains, dates, or metrics.
+Only use technologies that appear in the Projects List or the base CV.
+
+# ⚠️ HARD-TECH vs HARD-PRACTICE (the honesty line runs BETWEEN them)
+- **Hard-Tech = a named technology** you could install or import (Python, Spring Boot, Redis, Kafka,
+  Docker, AWS, Oracle…). 🔒 If it is not in the base CV or the Projects List, it must NOT appear in the
+  CV — anywhere, in any hedged form. Remove any such keyword the draft slipped in.
+- **Hard-Practice = an engineering practice, activity or quality attribute** naming no product
+  (debugging, troubleshooting, best practices, clean code, documentation, code review, testing,
+  refactoring, performance optimization, scalability, maintainability, high-availability, reliability,
+  distributed systems, asynchronous communication, remote collaboration, design patterns, OOP, API
+  design…). ✅ These are inherent to the work the candidate already did — treat them like soft skills and
+  **insert every one the posting asks for**. Leaving them out is a pure ATS loss with no honesty gain.
+  The only limit: they may not carry in a scale/uptime/incident/client claim or a product name.
 
 # CHECK AND FIX
-1. **Keyword coverage (most important):** EVERY important HARD skill and ALL SOFT skills from the job
-   description must appear naturally in the CV (Summary, project bullets, Intern experience, or Previous
-   Experience). Insert any missing ones by weaving single words into existing sentences — never by adding
-   fake experience or new sentences.
+1. **Keyword coverage (most important):** ALL SOFT skills and ALL HARD-PRACTICE keywords from the job
+   description must appear naturally in the CV (Summary, CORE SKILLS where it fits, project bullets,
+   Intern experience, or Previous Experience) — insert any missing ones by weaving single words into
+   existing sentences, never as new sentences. Of the HARD-TECH keywords, only those the candidate really
+   has may appear; leave the rest as honest gaps.
 2. **Accuracy & credibility:** keep everything realistic and truthful to the base CV + Projects List.
+   Strip-the-bold test: delete every bolded span — the remaining text must still support every
+   technology, domain, artifact, context and result the sentence claims. Bold may add manner and
+   Hard-Practice vocabulary; it may never add a technology or a new subject matter.
 3. **Structure fidelity — MUST match the ORIGINAL base CV EXACTLY:** same section headings with the same
    `#` levels (`### SUMMARY`, `### CORE SKILLS`, `### EXPERIENCE`, `### SELECTED PROJECTS`,
    `### EDUCATION`, `### PREVIOUS EXPERIENCE`), same `<br>` / `Tech:` lines, `*` bullets, blank lines.
