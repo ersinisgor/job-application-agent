@@ -28,10 +28,17 @@ python -m venv .venv && ./.venv/bin/pip install -r requirements.txt
 # CV poller (continuous)
 ./.venv/bin/python -m src.applyjobs.main
 
-# One-shot scan (cron/test)
+# One batch pass over every row marked Başvuru (B) = "Üretilecek" — the normal way to make
+# CVs. Also double-clickable in Finder (that IS the sheet's "button"; see the trigger note).
+./scripts/cv_uret.command
+
+# One-shot scan (cron/test) — same rule, more switches
 ./.venv/bin/python scripts/run_once.py --dry-run    # list candidates, write nothing
 ./.venv/bin/python scripts/run_once.py --limit 1    # process at most 1 (first test)
 ./.venv/bin/python scripts/run_once.py --row 430    # only sheet row 430
+# Posting is gone but you still want the CV: generate from the panel's staged text instead
+# of closing the row "Kalkmış" (clear N first if it is already marked).
+./.venv/bin/python scripts/run_once.py --row 430 --allow-staged
 
 # Cover letter for ONE job, on demand (only some applications ask for one)
 ./.venv/bin/python scripts/cover_letter.py --cv-no 305             # EN, copies to clipboard

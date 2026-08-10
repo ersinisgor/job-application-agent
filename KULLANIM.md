@@ -100,13 +100,41 @@ CLAUDE_MODEL=claude-opus-4-8 CLAUDE_EFFORT=high ./.venv/bin/python scripts/regen
 - **`--from` ve `--to` EŞİT olmalı** (tek CV için). Açıklama aralıktaki **her** CV'ye
   uygulanır — `--from 309 --to 312` yazarsan aynı açıklama dördüne de uygulanır.
 - **`-i` açıklaması** İngilizce ya da Türkçe olabilir (CV yine İngilizce üretilir).
-- **Dürüstlük kuralı geçerli:** eklenmesini istediğin proje/beceri **gerçek** olmalı
-  (`config/projects.md` veya `config/cv_base.md`'de bulunmalı) — model uydurmaz.
+- **Dürüstlük kuralı geçerli:** eklenmesini istediğin **proje veya teknoloji** gerçek olmalı
+  (`config/projects.md` veya `config/cv_base.md`'de bulunmalı) — model uydurmaz. Buna karşılık
+  *debugging, best practices, documentation, testing, scalability, high-availability* gibi
+  **ürün adı olmayan** ifadeler artık serbestçe eklenebiliyor (aşağıya bak).
 - Açıklamasız da çalışır (sadece mevcut ayarlarla yeniden üretir): `-i`'yi yazmazsın.
 - `--dry-run` eklersen hangi CV'lerin hedeflendiğini yazar, hiçbir şey üretmez.
 
 > Model/effort'u güçlendirmek için baştaki `CLAUDE_MODEL=... CLAUDE_EFFORT=high` kısmını
 > ekle; yazmazsan `.env`'deki varsayılan kullanılır.
+
+---
+
+## CV'ye ne eklenebilir, ne eklenemez?
+
+CV'nin her satırını mülakatta savunabilmen gerekiyor. Prompt ilandaki her anahtar kelimeyi
+**üç tipe** ayırıyor:
+
+| Tip | Örnek | Ne olur |
+|-----|-------|---------|
+| **Teknoloji** (Hard-Tech) | Redis, Kafka, Spring Boot, AWS, Oracle | 🔒 `cv_base.md`/`projects.md`'de yoksa **hiç yazılmaz** — "(fundamentals)" gibi kaçamak da yok |
+| **Pratik** (Hard-Practice) | debugging, best practices, documentation, code review, testing, scalability, maintainability, high-availability, distributed systems, async communication | ✅ **Eklenir** — bunlar ürün değil, zaten yaptığın işin doğal parçası |
+| **Soft skill** | communication, teamwork, attention to detail | ✅ Hepsi eklenir |
+
+**Neden değişti:** eskiden prompt yalnızca Hard/Soft ayrımı biliyordu, bu yüzden `Debugging` veya
+`Best Practices` gibi ifadeleri "sahte hard skill" sayıp CV'ye yazmıyordu (bkz. `cv_324_analysis.md`).
+Bunlar teknoloji değil; yazmamak ATS puanı kaybettiriyordu, dürüstlük olarak hiçbir şey kazandırmıyordu.
+
+**Sahte ekleme** hâlâ şudur: kullanmadığın bir teknoloji, yapmadığın bir görev/alan, olmayan bir
+işveren/müşteri, uydurma bir metrik. Karışık terimler ikiye ayrılır: *containerization* pratiktir,
+**Docker** teknolojidir; *version control* pratiktir, **Git** teknolojidir. Pratik kelimesinin
+sırtında ölçek iddiası da kaçamaz: `high-availability principles` ✅ / `1M+ istek işleyen
+high-availability sistemler` ❌.
+
+> Markdown CV'de **bold**, `cv_base.md`'ye göre değişen kelimeleri gösterir — yani neyin eklendiğini
+> tek bakışta denetleyebilirsin. `.docx`/Google Doc/PDF'e bu vurgu hiç geçmez, sadece kelimeler geçer.
 
 ---
 
@@ -220,6 +248,11 @@ yapman gerekir, ilk çalıştırmada mevcut ilanlar "görüldü" işaretlenir).
   yine de CV istiyorsan: `./.venv/bin/python scripts/run_once.py --row <satır> --allow-staged`.
 - **Hiçbir satır işlenmiyor ("No candidate rows"):** muhtemelen B sütununu `Üretilecek`
   yapmayı unuttun. Kontrol: `./.venv/bin/python scripts/run_once.py --dry-run`.
+- **CV'ye yeni bir proje takıldıysa PDF'i de bir kontrol et:** listeden proje değiştirildiğinde
+  o bloğun tamamı yeni sayılır ve model başlığı/`Tech:` satırını da bold yazar. Bu iki satırın
+  `.docx`/PDF'e taşınması 2026-08-10'da düzeltildi (öncesinde takılan proje bir önceki projenin
+  teknoloji listesiyle görünüyordu; etkilenen 16 CV'nin PDF'i yeniden üretildi). Gördüğün Markdown
+  ile PDF hâlâ ayrışıyorsa bu sınıf bir hata geri gelmiş demektir.
 
 ---
 
