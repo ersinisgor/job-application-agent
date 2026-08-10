@@ -121,10 +121,18 @@ def parse_markdown_cv(md: str) -> dict:
                 disp, url = _parse_title_link(stripped[5:])
                 cur_project = {"title": disp, "title_url": url, "bullets": [], "tech": ""}
                 projects.append(cur_project)
-            elif cur_project is not None and stripped.lower().startswith("tech:"):
-                cur_project["tech"] = _strip_md(stripped.split(":", 1)[1])
-            elif cur_project is not None and _is_md_bullet(stripped):
-                cur_project["bullets"].append(_bullet_text(stripped))
+            elif cur_project is not None:
+                # Strip the markers BEFORE testing for 'Tech:'. STEP 10 makes the model bold
+                # every word that differs from cv_base.md, so a project swapped in at STEP 8
+                # arrives fully bolded — '**Tech: Python, FastAPI, ...**'. Matching the raw
+                # line left tech empty, build_docx skips an empty tech, and the template's
+                # frozen Tech line (the PREVIOUS project's stack) shipped in the .docx/PDF
+                # while the markdown looked correct. Same trap _parse_title_link documents.
+                plain = _strip_md(stripped)
+                if plain.lower().startswith("tech:"):
+                    cur_project["tech"] = plain.split(":", 1)[1].strip()
+                elif _is_md_bullet(stripped):
+                    cur_project["bullets"].append(_bullet_text(stripped))
 
         elif section.startswith("PREVIOUS EXPERIENCE"):
             # The role title now lives in the heading, so every line here is description.
