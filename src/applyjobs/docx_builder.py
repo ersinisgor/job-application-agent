@@ -57,6 +57,20 @@ def _strip_md(text: str) -> str:
     return text.strip()
 
 
+# A heading, with the '#' marks possibly wrapped in bold: '### SUMMARY', '#### [Title](url)',
+# and — because STEP 10 bolds every word a swapped-in project adds — '**#### [Title](url)**'.
+# Anchoring on a bare '#' silently dropped the whole project block (title, bullets AND tech
+# line) from the parse, so the template's frozen slot shipped in its place: cv_322's PDF lost
+# the API Hotel Project and listed Cloud File Storage twice.
+_HEADING_RE = re.compile(r"^(?:\*\*)?(#{3,4})\s+(.+)$")
+
+
+def _heading(line: str):
+    """('### '/'#### ' level, heading text) or None. Bold markers around '#' are tolerated."""
+    m = _HEADING_RE.match(line)
+    return (len(m.group(1)), m.group(2).strip()) if m else None
+
+
 _TITLE_LINK_RE = re.compile(r"^\[(?P<disp>.+?)\]\((?P<url>[^)\s]+)\)(?P<rest>.*)$")
 
 
@@ -90,8 +104,9 @@ def parse_markdown_cv(md: str) -> dict:
     for raw in lines:
         line = raw.rstrip()
         stripped = line.strip()
-        if stripped.startswith("### "):
-            section = stripped[4:].strip().upper()
+        heading = _heading(stripped)
+        if heading and heading[0] == 3:
+            section = _strip_md(heading[1]).upper()
             cur_project = None
             cur_entry = None
             continue
@@ -110,15 +125,15 @@ def parse_markdown_cv(md: str) -> dict:
             core_skills.append(_strip_md(stripped))
 
         elif section == "EXPERIENCE":
-            if stripped.startswith("#### "):
-                cur_entry = {"title": _strip_md(stripped[5:]), "bullets": []}
+            if heading and heading[0] == 4:
+                cur_entry = {"title": _strip_md(heading[1]), "bullets": []}
                 experience.append(cur_entry)
             elif cur_entry is not None and _is_md_bullet(stripped):
                 cur_entry["bullets"].append(_bullet_text(stripped))
 
         elif section == "SELECTED PROJECTS":
-            if stripped.startswith("#### "):
-                disp, url = _parse_title_link(stripped[5:])
+            if heading and heading[0] == 4:
+                disp, url = _parse_title_link(heading[1])
                 cur_project = {"title": disp, "title_url": url, "bullets": [], "tech": ""}
                 projects.append(cur_project)
             elif cur_project is not None:
@@ -368,6 +383,15 @@ def build_docx(markdown_cv: str) -> bytes:
         else:  # title line
             cur = {"title": p, "bullets": [], "tech": None}
             blocks.append(cur)
+
+    # A slot with no project to fill it would otherwise keep the template's frozen content —
+    # a project the model deliberately dropped, shipping under the CV the user reviewed (and,
+    # when the drop is a parse failure, duplicating the project in the slot before it). Drop
+    # the surplus slots instead. Nothing grows here: the markdown never has MORE projects than
+    # the template has slots, and an extra project would silently vanish if it did.
+    for slot in blocks[len(data["projects"]):]:
+        for p in [slot["title"], *slot["bullets"]] + ([slot["tech"]] if slot["tech"] is not None else []):
+            _remove(p._p)
 
     for slot, proj in zip(blocks, data["projects"]):
         _replace_content(slot["title"], proj["title"], keep_prefix_nodes=0)
