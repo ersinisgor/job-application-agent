@@ -14,7 +14,7 @@ import logging
 import re
 from pathlib import Path
 
-from . import docx_builder, drive_docs, huntr, joblookup
+from . import docx_builder, drive_docs, huntr, joblookup, pdf_check
 from .reporting import record_duplicate, record_failure
 from .config import (
     CV_TRIGGER_BASVURU_VALUES,
@@ -257,25 +257,46 @@ def save_cv_markdown(cv_no: int, cv_md: str) -> Path:
     return cv_path
 
 
-def _export_google_doc(cv_no: int, cv_md: str) -> None:
-    """Şablondan .docx'i kurar, Drive'a Google Doc olarak yükler ve o Doc'u PDF olarak yerel
-    PDF klasörüne geri indirir.
+def _export_google_doc(cv_no: int, cv_md: str) -> list[str]:
+    """Şablondan .docx'i kurar, yerel DOCX klasörüne yazar, Drive'a Google Doc olarak yükler ve
+    o Doc'u PDF olarak yerel PDF klasörüne geri indirir; sonra PDF'in metin katmanını denetler.
 
-    .docx yalnızca bellekte bir ara üründür (Drive onu Doc'a çevirir); yerelde .docx tutulmaz.
+    .docx, builder'ın baytlarıdır (şablonun fontları gömülü): Workday/Taleo/iCIMS gibi portallar
+    ya da Word isteyen ilanlar için. Drive'dan önce yazılır; Drive başarısız olsa da kalır.
+    PDF yazılmadan önce metin katmanındaki ligatürler düzeltilir (pdf_check.fix_ligatures).
+
+    Dönüş: kullanıcıya raporlanacak PDF uyarıları (pdf_check), boş liste = temiz. Gerçek kusurlar
+    (içerik eşliği, sayfa sayısı…) failures.log'a da yazılır; ATS biçim uyarıları yalnızca loglanır,
+    çünkü eski şablon (CV_TEMPLATE=cv_template_eski.docx) onları her CV'de bilerek verir.
     Best-effort: buradaki bir hata, zaten başarılı olmuş Markdown CV'yi geri almamalı. Kimlik
     bilgileri bir kez yüklensin diye tek bir Drive istemcisi yeniden kullanılır.
     """
+    settings.ensure_dirs()
+    pdf_path = settings.pdf_dir / f"cv_{cv_no}.pdf"
     try:
         docx_bytes = docx_builder.build_docx(cv_md)
+        (settings.docx_dir / f"cv_{cv_no}.docx").write_bytes(docx_bytes)
         client = drive_docs.DriveDocsClient()
         file_id = client.upload_as_google_doc(docx_bytes, f"cv_{cv_no}")
         pdf_bytes = client.export_as_pdf(file_id)
-        (settings.pdf_dir / f"cv_{cv_no}.pdf").write_bytes(pdf_bytes)
+        try:
+            pdf_bytes = pdf_check.fix_ligatures(pdf_bytes)
+        except Exception:  # noqa: BLE001 — Google'ın ham PDF'i yine geçerli bir CV
+            logger.exception("Ligature fix failed for cv_%d; saving Google's PDF as-is.", cv_no)
+        pdf_path.write_bytes(pdf_bytes)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Google Doc/PDF export failed for cv_%d (Markdown CV still saved).", cv_no)
         # Markdown CV + sheet satırı yine de başarılı olur; yani bu başka türlü sessiz kalırdı —
         # eksik bir Google Doc/PDF fark edilsin diye kaydet.
         record_failure("drive_export", cv_no=cv_no, error=repr(exc))
+        return [f"Google Doc/PDF dışa aktarılamadı: {exc!r}"]
+
+    check = pdf_check.check_cv_pdf(pdf_path, cv_md)
+    if check.errors:
+        record_failure("pdf_check", cv_no=cv_no, error="; ".join(check.errors))
+    if check.ats:
+        logger.warning("cv_%d PDF ATS warnings: %s", cv_no, "; ".join(check.ats))
+    return check.messages()
 
 
 def _scrape_fields(row: Row, scraper: Scraper, allow_staged: bool = False):

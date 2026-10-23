@@ -45,5 +45,7 @@ sonrakine geç.
 
 ## Adım 3: Rapor
 
-Türkçe, kısa: yeniden üretilen her CV için `CV <no> | match <oran>`, atlananlar ve hatalar.
+Türkçe, kısa: yeniden üretilen her CV için `CV <no> | match <oran> | <docx yolu>`, atlananlar ve
+hatalar. `pdf_warnings` boş değilse CV satırının altına `  ⚠ PDF kontrolü: <uyarılar, ; ile>`
+ekle; uyarı CV'yi başarısız saymaz, yeniden deneme de gerektirmez.
 Son satır: `Regenerated <X> CV(s), <Z> failed.`
