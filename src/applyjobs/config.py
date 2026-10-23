@@ -15,7 +15,6 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-CONFIG_DIR = PROJECT_ROOT / "config"
 # The candidate's facts (CV + projects): the single source of truth every agent reads.
 PROFILE_DIR = PROJECT_ROOT / "profile"
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
@@ -27,9 +26,6 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 # Config asset files
 CV_BASE_FILE = PROFILE_DIR / "cv_base.md"
 PROJECTS_LIST_FILE = PROFILE_DIR / "projects.md"
-ATS_PROMPT_FILE = CONFIG_DIR / "ats_prompt.md"
-ATS_REVIEW_PROMPT_FILE = CONFIG_DIR / "ats_review_prompt.md"
-COVER_LETTER_PROMPT_FILE = CONFIG_DIR / "cover_letter_prompt.md"
 
 # Config asset: the .docx template for the Google Docs output
 CV_TEMPLATE_FILE = TEMPLATES_DIR / "cv_template.docx"
@@ -107,8 +103,15 @@ def _env_bool(name: str, default: bool) -> bool:
 @dataclass(frozen=True)
 class Settings:
     anthropic_api_key: str
-    claude_model: str
-    claude_effort: str
+    # CV agent'larının (cv-writer / cv-reviewer) modeli ve effort'u. claude -p'ye
+    # --model / --effort olarak geçer. Eski CLAUDE_MODEL / CLAUDE_EFFORT yerine yeni ad:
+    # Claude Code kendi CLAUDE_EFFORT değişkenini her Bash komutuna ihraç ediyor ve
+    # load_dotenv var olanı ezmediği için .env'deki değer sessizce yok sayılıyordu.
+    cv_model: str
+    cv_effort: str
+    # claude CLI'nin yolu. Boşsa PATH'te, sonra ~/.local/bin/claude'da aranır (Finder'dan
+    # çift tıklanan .command dosyalarında PATH dar olur).
+    claude_bin: str
     # Model used by the LinkedIn Job Summary API (separate from claude_model, which
     # is used for CV generation). Defaults to Haiku for fast, low-cost summaries.
     summary_model: str
@@ -141,13 +144,13 @@ class Settings:
         default_cover = str(OUTPUTS_DIR / "cover_letters")
         return cls(
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
-            claude_model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6"),
-            # Reasoning effort: none / low / medium / high (extended thinking budget).
-            claude_effort=os.getenv("CLAUDE_EFFORT", "none").strip().lower(),
+            cv_model=os.getenv("CV_MODEL", "claude-sonnet-5"),
+            # low / medium / high / xhigh / max. medium, ölçülmüş en iyi denge (bkz. KULLANIM.md).
+            cv_effort=os.getenv("CV_EFFORT", "medium").strip().lower(),
+            claude_bin=os.getenv("CLAUDE_BIN", "").strip(),
             # Model for the LinkedIn Job Summary API (extension). Haiku by default.
             summary_model=os.getenv("SUMMARY_MODEL", "claude-haiku-4-5"),
-            # Cover letters: Sonnet 5, called WITHOUT temperature (Sonnet 5 rejects a
-            # non-default temperature/top_p/top_k with a 400) — see cover_letter.py.
+            # Mektuplar: cover-letter-writer agent'ı bu modelle, düşük effort ile çalışır.
             cover_letter_model=os.getenv("COVER_LETTER_MODEL", "claude-sonnet-5"),
             # Second expert QA pass on each CV (OFF by default: the verify/fix
             # checklist is folded into the single generation prompt, STEP 12).
@@ -182,9 +185,9 @@ class Settings:
         return self.output_dir / "pdf"
 
     def validate(self) -> None:
+        # ANTHROPIC_API_KEY burada aranmıyor: CV ve mektup artık Claude Code agent'larıyla
+        # (abonelik girişiyle) üretiliyor. Anahtar sadece panel özeti için summary_api'de lazım.
         missing = []
-        if not self.anthropic_api_key:
-            missing.append("ANTHROPIC_API_KEY")
         if not self.spreadsheet_id:
             missing.append("SPREADSHEET_ID")
         if missing:

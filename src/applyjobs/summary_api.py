@@ -3,7 +3,7 @@
 Reads a job-posting text and returns a structured summary via Claude. Field
 identifiers are English; the field VALUES are produced in Turkish (see
 summary_schema). Uses the Haiku model (settings.summary_model) for fast, low-cost
-summaries, independent of the CV-generation model (settings.claude_model).
+summaries, independent of the CV agents' model (settings.cv_model).
 
 Run:
     python scripts/run_summary_api.py
@@ -615,6 +615,9 @@ def summarize_endpoint(req: SummarizeRequest) -> JobSummary:
         raise _http_from(exc, "summarization")
 
 
+_COVER_LOCK = threading.Lock()
+
+
 @app.post("/cover-letter", response_model=CoverLetterResponse)
 def cover_letter_endpoint(req: CoverLetterRequest) -> CoverLetterResponse:
     """Return this posting's cover letter, generating it only if it doesn't exist yet."""
@@ -649,12 +652,20 @@ def cover_letter_endpoint(req: CoverLetterRequest) -> CoverLetterResponse:
         raise HTTPException(status_code=404, detail=detail)
 
     try:
-        text, created = cover_letter.get_or_create(
-            cv_no, lang=req.lang, force=req.force, row=row
-        )
+        # Mektup bir claude -p agent çalışması (~30-60 sn). Çift tıklama aynı mektubu iki
+        # kez ürettirmesin diye üretimler sıraya alınır; önbellekten okuma da kilidin
+        # içinde, çünkü ikinci tıklama birincinin yazdığı dosyayı görmeli.
+        with _COVER_LOCK:
+            text, created = cover_letter.get_or_create(
+                cv_no, lang=req.lang, force=req.force, row=row
+            )
     except (FileNotFoundError, ValueError) as exc:
         # Missing CV / missing saved JD / blank company: all "can't build it", not bugs.
         raise HTTPException(status_code=404, detail=str(exc))
+    except RuntimeError as exc:
+        # Agent çalıştı ama dosya üretmedi: mesaj kullanıcıya olduğu gibi gösterilir.
+        logger.warning("cover-letter agent failed: %s", exc)
+        raise HTTPException(status_code=502, detail=str(exc))
     except Exception as exc:  # noqa: BLE001
         raise _http_from(exc, "cover letter generation")
 

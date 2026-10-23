@@ -63,7 +63,7 @@ def main() -> None:
         text, created = cover_letter.get_or_create(
             args.cv_no, lang=args.lang, force=args.force
         )
-    except (FileNotFoundError, ValueError) as exc:
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
         log.error("%s", exc)
         raise SystemExit(1)
 

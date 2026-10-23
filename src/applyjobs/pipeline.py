@@ -1,15 +1,23 @@
-"""Orchestration: detect new rows, generate CVs, save files, write back CV No."""
+"""CV hattının deterministik adımları: aday satır seçimi, ilan okuma, çıktı kaydetme,
+Google Doc/PDF dışa aktarımı.
+
+Burada model çağrısı YOK. CV'yi /cv-uret command'ı ile cv-writer subagent'ı üretir;
+bu modüldeki fonksiyonları ise cv-tools MCP sunucusu (mcp_server.py) ve poller döngüsü
+(main.py) çağırır. Değişmez kurallar (iki koşullu tetik, tekrar kontrolü, Kalkmış
+işaretçisi, numaralandırma tabanı) bilerek burada, Python'da duruyor: LLM akışı yönetir
+ama bu kuralları değiştiremez.
+"""
 from __future__ import annotations
 
 import json
 import logging
 import re
+from pathlib import Path
 
-from . import docx_builder, drive_docs, generator, huntr, joblookup
+from . import docx_builder, drive_docs, huntr, joblookup
 from .reporting import record_duplicate, record_failure
 from .config import (
     CV_TRIGGER_BASVURU_VALUES,
-    EXPIRED_MARKER,
     HUNTR_SEEN_FILE,
     NO_CV_MARKER,
     STATE_DIR,
@@ -229,16 +237,25 @@ def find_candidates(rows: list[Row]) -> list[Row]:
     return candidates
 
 
-def _save_outputs(cv_no: int, cv_md: str, full_response: str, job_description: str) -> None:
+def save_job_description(cv_no: int, job_description: str) -> Path:
+    """İlan metnini job_description_<no>.md olarak kaydeder ve yolunu döndürür.
+
+    cv-writer subagent'ı ilanı bu dosyadan okur; /cv-yenile ve mektup da sonradan aynı
+    dosyayı kullanır (ilan LinkedIn'den kalksa bile).
+    """
+    settings.ensure_dirs()
+    jd_path = settings.job_description_dir / f"job_description_{cv_no}.md"
+    jd_path.write_text(job_description, encoding="utf-8")
+    return jd_path
+
+
+def save_cv_markdown(cv_no: int, cv_md: str) -> Path:
+    """Analiz dosyasından çıkarılan temiz CV'yi cv_<no>.md olarak kaydeder."""
     settings.ensure_dirs()
     cv_path = settings.markdown_dir / f"cv_{cv_no}.md"
-    analysis_path = settings.analysis_dir / f"cv_{cv_no}_analysis.md"
-    jd_path = settings.job_description_dir / f"job_description_{cv_no}.md"
-
     cv_path.write_text(cv_md, encoding="utf-8")
-    analysis_path.write_text(full_response, encoding="utf-8")
-    jd_path.write_text(job_description, encoding="utf-8")
     logger.info("Saved CV -> %s", cv_path)
+    return cv_path
 
 
 def _export_google_doc(cv_no: int, cv_md: str) -> None:
@@ -277,7 +294,7 @@ def _scrape_fields(row: Row, scraper: Scraper, allow_staged: bool = False):
     OFF by default, including on the CV path. Since the trigger moved to B == "Üretilecek"
     the user marks a row at application time, so a failed scrape most likely means the
     posting is gone — and a CV for a posting nobody can apply to is exactly the waste the
-    deferred trigger exists to stop. run_scan writes EXPIRED_MARKER instead. Pass True
+    deferred trigger exists to stop. prepare_job (mcp_server) writes EXPIRED_MARKER instead. Pass True
     (run_once.py --allow-staged) to force one out of the staged text anyway.
     """
     try:
@@ -312,149 +329,6 @@ def _scrape_fields(row: Row, scraper: Scraper, allow_staged: bool = False):
         "J_url": jp.company_url,
     }
     return jp, fields
-
-
-def _generate_and_save(
-    row: Row, cv_no: int, jp: JobPage
-) -> tuple[float | None, str]:
-    """Generate the CV from an already-fetched page and save its outputs.
-
-    The scrape happens in run_scan, not here: a scrape failure and a generation failure
-    need different endings (EXPIRED_MARKER vs. retry next scan), and folding both into one
-    try block made them indistinguishable. Returns (match_rate, languages) — the job's top
-    two priority programming languages ("Python, Java") for column Q. G (work mode) is
-    intentionally NOT inferred — it is filled manually — so the relocation sentence uses
-    the row's existing G if set.
-    """
-    work_mode = row.work_mode  # manual (often empty -> default relocation sentence)
-    city = row.city or jp.city
-    full_response, cv_md, match_rate = generator.generate(
-        jp.description, work_mode=work_mode, city=city
-    )
-    languages = generator.extract_languages(full_response)
-
-    # Expert QA second pass (toggle via CV_REVIEW): re-check the draft against the job
-    # (keyword coverage, accuracy, structure, match rate) and fix problems. Fall back
-    # to the draft on error.
-    review_full = ""
-    if settings.cv_review:
-        try:
-            review_full, cv_reviewed, reviewed_rate = generator.review(
-                jp.description, cv_md, work_mode=work_mode, city=city
-            )
-            cv_md = cv_reviewed
-            if reviewed_rate is not None:
-                match_rate = reviewed_rate
-            logger.info("Review pass done for cv_%d (final match rate: %s).", cv_no, match_rate)
-        except Exception:  # noqa: BLE001
-            logger.exception("Review pass failed for cv_%d; using the first draft.", cv_no)
-
-    _save_outputs(cv_no, cv_md, full_response, jp.description)
-    if review_full:
-        settings.ensure_dirs()
-        (settings.analysis_dir / f"cv_{cv_no}_review.md").write_text(review_full, encoding="utf-8")
-    _export_google_doc(cv_no, cv_md)
-
-    return match_rate, languages
-
-
-def _regenerate_one(cv_no: int, row: Row, instruction: str = "") -> float | None:
-    """Regenerate a single CV from its SAVED job description (no re-scrape).
-
-    The original page text was stored as job_description_<no>.md when the CV was first
-    made; re-using it is robust against expired/removed LinkedIn postings and avoids a
-    long burst of scraping. Work mode (G) and city (F) come from the sheet row.
-    `instruction` is an optional per-run user override (regenerate.py --instruction).
-    Overwrites cv_<no>.md/_analysis/_review, updates the same-named Google Doc, and
-    re-downloads its PDF.
-    Returns the final match rate (or None).
-    """
-    job_description = joblookup.load_saved_jd(cv_no)
-
-    work_mode = row.work_mode  # manual G (often empty -> default relocation sentence)
-    city = row.city
-    full_response, cv_md, match_rate = generator.generate(
-        job_description, work_mode=work_mode, city=city, instruction=instruction
-    )
-
-    review_full = ""
-    if settings.cv_review:
-        try:
-            review_full, cv_reviewed, reviewed_rate = generator.review(
-                job_description, cv_md, work_mode=work_mode, city=city, instruction=instruction
-            )
-            cv_md = cv_reviewed
-            if reviewed_rate is not None:
-                match_rate = reviewed_rate
-            logger.info("Review pass done for cv_%d (final match rate: %s).", cv_no, match_rate)
-        except Exception:  # noqa: BLE001
-            logger.exception("Review pass failed for cv_%d; using the first draft.", cv_no)
-
-    _save_outputs(cv_no, cv_md, full_response, job_description)
-    if review_full:
-        settings.ensure_dirs()
-        (settings.analysis_dir / f"cv_{cv_no}_review.md").write_text(review_full, encoding="utf-8")
-    _export_google_doc(cv_no, cv_md)
-    return match_rate
-
-
-def regenerate_cv_range(
-    start: int, end: int, dry_run: bool = False, instruction: str = ""
-) -> int:
-    """Re-generate CVs whose CV No (column N) is in [start, end], keeping the same
-    numbers. Regenerates from each CV's SAVED job description (no re-scrape), overwrites
-    cv_<no>.md/_analysis/_review, updates the same-named Google Doc, re-downloads its PDF,
-    and refreshes Match Rate (P). Other sheet columns are left untouched.
-
-    `instruction` is an optional free-text override applied to EVERY CV in the range as a
-    high-priority directive (which project to drop/feature, emphasis, ordering). Target a
-    single CV with an equal --from/--to when the instruction is CV-specific.
-
-    Uses whatever model/effort the current settings define, so run it with the env
-    overridden to pick a stronger model, e.g.:
-        CLAUDE_MODEL=claude-opus-4-8 CLAUDE_EFFORT=high python scripts/regenerate.py --from 200 --to 219
-    """
-    sheets = SheetsClient()
-    rows = sheets.get_rows()
-
-    targets = joblookup.targets_in_range(rows, start, end)
-
-    if not targets:
-        logger.info("No rows with CV No in [%d, %d].", start, end)
-        return 0
-
-    logger.info(
-        "Regenerating %d CV(s) [%s] from saved job descriptions with model=%s effort=%s (review=%s).",
-        len(targets),
-        ", ".join(str(n) for n, _ in targets),
-        settings.claude_model,
-        settings.claude_effort,
-        settings.cv_review,
-    )
-    if instruction.strip():
-        logger.info("Applying per-run override instruction to each CV: %s", instruction.strip())
-    if dry_run:
-        for n, r in targets:
-            logger.info("  [DRY] CV %d -> sheet row %d", n, r.number)
-        return 0
-
-    count = 0
-    for n, row in targets:
-        logger.info("Regenerating CV %d (row %d) ...", n, row.number)
-        try:
-            match_rate = _regenerate_one(n, row, instruction=instruction)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Regeneration failed for CV %d (row %d); skipping.", n, row.number)
-            record_failure("regenerate", row=row.number, cv_no=n, link=row.link, error=repr(exc))
-            continue
-        if match_rate is not None:
-            try:
-                sheets.write_match_rate(row.number, match_rate)
-            except Exception:  # noqa: BLE001
-                logger.exception("Match-rate write failed for CV %d (files were saved).", n)
-        count += 1
-        logger.info("Regenerated CV %d (final match rate: %s).", n, match_rate)
-    return count
 
 
 def _process_info_only(candidates: list[Row], sheets: SheetsClient) -> int:
@@ -495,27 +369,11 @@ def _process_info_only(candidates: list[Row], sheets: SheetsClient) -> int:
     return count
 
 
-def run_scan(
-    dry_run: bool = False,
-    limit: int | None = None,
-    only_row: int | None = None,
-    allow_staged: bool = False,
-) -> int:
-    """Scan the sheet once and process candidate rows. Returns count processed.
-
-    limit:        process at most this many candidates (sheet order).
-    only_row:     process only this sheet row number (must still be a candidate).
-    allow_staged: fall back to the panel's staged description when the posting can no
-                  longer be fetched, instead of marking the row EXPIRED_MARKER. Off by
-                  default — see _scrape_fields.
-    """
-    sheets = SheetsClient()
-    # Staged descriptions whose row was deleted or never generated. Cheap (the directory
-    # normally holds 0-5 files) and this is the only long-running process that can do it.
-    joblookup.prune_pending_jd()
-    rows = sheets.get_rows()
+def select_candidates(
+    rows: list[Row], only_row: int | None = None, limit: int | None = None
+) -> list[Row]:
+    """find_candidates + isteğe bağlı tek satır / adet sınırı (sheet sırasıyla)."""
     candidates = find_candidates(rows)
-
     if only_row is not None:
         candidates = [r for r in candidates if r.number == only_row]
         if not candidates:
@@ -527,97 +385,29 @@ def run_scan(
             )
     if limit is not None:
         candidates = candidates[:limit]
+    return candidates
 
+
+def scan_candidates(
+    only_row: int | None = None, limit: int | None = None
+) -> tuple[SheetsClient, list[Row]]:
+    """Sheet'i bir kez okuyup aday satırları döndürür. Model çağırmaz.
+
+    Poller döngüsü bununla "iş var mı?" diye bakar; boşsa hiç agent başlatılmaz.
+    """
+    sheets = SheetsClient()
+    # Satırı silinmiş ya da hiç üretilmemiş bekleyen ilan metinleri. Ucuz (klasörde
+    # normalde 0-5 dosya olur) ve bunu yapabilecek tek uzun ömürlü süreç burası.
+    joblookup.prune_pending_jd()
+    rows = sheets.get_rows()
+    return sheets, select_candidates(rows, only_row, limit)
+
+
+def log_candidates(candidates: list[Row]) -> None:
+    """Kuru çalıştırma (--dry-run) çıktısı: adayları listeler, hiçbir şey yazmaz."""
     if not candidates:
         logger.info("No candidate rows to process.")
-        return 0
-
-    mode = "CV generation" if settings.cv_generation else "info-only (CV generation OFF)"
-    logger.info("Processing %d candidate row(s) [%s].", len(candidates), mode)
-    if dry_run:
-        for r in candidates:
-            logger.info(
-                "  [DRY] row %d | Başvuru=%r | %s", r.number, r.basvuru, r.link
-            )
-        return 0
-
-    if not settings.cv_generation:
-        return _process_info_only(candidates, sheets)
-
-    # Never go below the highest number we've ever assigned (floor guard).
-    next_no = max(sheets.next_cv_number(rows), load_last_cv_no() + 1)
-    count = 0
-    expired = 0
-    failed = 0
-    with Scraper(headless=True) as scraper:
-        for row in candidates:
-            cv_no = next_no
-            logger.info("Processing row %d -> CV No %d -> %s", row.number, cv_no, row.link)
-
-            # 1) Fetch the posting. A failure here means the posting is (most likely) gone:
-            #    close the row with EXPIRED_MARKER so it stops being a candidate, and spend
-            #    no Claude call and no CV number on it. This is the point of the deferred
-            #    trigger — the user marked this row while applying, so if the page is dead
-            #    the application is off the table anyway.
-            try:
-                jp, fields = _scrape_fields(row, scraper, allow_staged=allow_staged)
-            except Exception as exc:  # noqa: BLE001
-                logger.warning(
-                    "Posting unavailable for row %d (%r); marking N=%r, no CV made.",
-                    row.number, exc, EXPIRED_MARKER,
-                )
-                record_failure("expired", row=row.number, link=row.link, error=repr(exc))
-                try:
-                    sheets.write_info_only_row(row.number, {}, EXPIRED_MARKER)
-                    expired += 1
-                except Exception as write_exc:  # noqa: BLE001
-                    logger.exception(
-                        "Could not mark row %d as expired; will retry next scan.", row.number
-                    )
-                    record_failure(
-                        "sheet_write", row=row.number, link=row.link, error=repr(write_exc)
-                    )
-                    failed += 1
-                continue
-
-            # 2) Generate WITHOUT touching the sheet yet. This gives any of your own edits
-            #    to this row (B/C/F/G/H...) ~1.5 min to sync to Drive before the app writes,
-            #    and means we touch the sheet only once (less clobbering).
-            try:
-                match_rate, languages = _generate_and_save(row, cv_no, jp)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception(
-                    "Generation failed for row %d; number not consumed, will retry next scan.",
-                    row.number,
-                )
-                record_failure("generate", row=row.number, link=row.link, error=repr(exc))
-                failed += 1
-                continue
-
-            # 3) Single sheet write at the end: page-derived fields (only-empty) +
-            #    CV No (N) + Match Rate (P) + priority languages (Q) together.
-            try:
-                sheets.write_processed_row(
-                    row.number, fields, cv_no, match_rate, languages
-                )
-                save_last_cv_no(cv_no)
-                next_no += 1
-                # The description now lives in job_description_<no>.md, which is what
-                # regenerate and the cover letter read. Drop the panel's staging copy.
-                # After the sheet write on purpose: a failed write keeps the fallback
-                # available for the retry.
-                joblookup.clear_pending_jd(joblookup.linkedin_job_id(row.link))
-            except Exception as exc:  # noqa: BLE001
-                logger.exception(
-                    "Sheet write failed for row %d (CV files were saved; will retry next scan).",
-                    row.number,
-                )
-                record_failure("sheet_write", row=row.number, cv_no=cv_no, link=row.link, error=repr(exc))
-                failed += 1
-                continue
-
-            count += 1
-    logger.info(
-        "Scan complete: %d CV(s) generated, %d expired, %d failed.", count, expired, failed
-    )
-    return count
+        return
+    logger.info("%d candidate row(s):", len(candidates))
+    for r in candidates:
+        logger.info("  [DRY] row %d | Başvuru=%r | %s", r.number, r.basvuru, r.link)

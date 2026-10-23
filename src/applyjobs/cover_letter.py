@@ -13,20 +13,20 @@ Two things worth knowing before changing anything here:
   hand back the EN letter).
 * **No pipeline import.** summary_api imports this module, and pipeline pulls in
   Playwright at module scope — see joblookup.py.
+* **The letter is written by an agent.** On a cache miss get_or_create() runs
+  `claude -p "/mektup <no> <lang>"` (agent_runner) and reads back the file that the
+  cover-letter-writer agent saved through the cv-tools MCP server (save_cover_letter).
 """
 from __future__ import annotations
 
 import datetime
 import logging
-from functools import lru_cache
 from pathlib import Path
 import re
 
-import anthropic
-
-from . import joblookup
-from .config import COVER_LETTER_PROMPT_FILE, PROJECTS_LIST_FILE, settings
-from .generator import ONSITE_WORK_MODES, BASE_RELOCATION_SENTENCE, _strip_fence
+from . import agent_runner, joblookup
+from .config import PROJECTS_LIST_FILE, settings
+from .cv_output import ONSITE_WORK_MODES, BASE_RELOCATION_SENTENCE, strip_fence
 from .sheets import COL_COMPANY, COL_POZISYON, Row, SheetsClient
 
 logger = logging.getLogger(__name__)
@@ -39,23 +39,9 @@ LANGS = {"en": "English", "tr": "Turkish"}
 # Ersin Isgor") — a letter that ends "Best regards," is one the user pastes unsigned.
 SIGN_OFFS = {"en": "Best regards,\n\nErsin Isgor", "tr": "Saygılarımla,\n\nErsin Isgor"}
 
-# The letter is short prose; this is only a ceiling. Generous because Sonnet 5's
-# tokenizer emits ~30% more tokens than Sonnet 4.6 for the same text.
-MAX_TOKENS = 1000
-
 _LETTER_RE = re.compile(r"<LETTER_START>(.*?)<LETTER_END>", re.DOTALL)
 # The bookkeeping header _write puts at the top of each saved letter.
 _META_RE = re.compile(r"\A\s*<!--[^>]*-->\s*")
-
-
-@lru_cache(maxsize=1)
-def _client() -> anthropic.Anthropic:
-    """Create the Anthropic client once (key from settings).
-
-    Local to this module on purpose: importing summary_api's client would drag
-    FastAPI into the CLI.
-    """
-    return anthropic.Anthropic(api_key=settings.anthropic_api_key)
 
 
 def cover_letter_path(cv_no: int, lang: str) -> Path:
@@ -132,66 +118,15 @@ def _relocation_line(work_mode: str, city: str, lang: str) -> str:
 
 
 def _relocation_rule(line: str) -> str:
-    """Turn the sentence into an instruction for the prompt's rule slot."""
+    """Cümleyi agent'a verilecek kurala çevirir (kural Türkçe, cümle birebir)."""
     if not line:
         return (
-            "This job is remote, so the letter must NOT mention relocation, "
-            "on-site work, or hybrid work at all."
+            "Bu iş uzaktan (remote); mektup relocation'dan, ofisten çalışmadan ya da "
+            "hibrit çalışmadan HİÇ söz etmemeli."
         )
     return (
-        "Place this sentence VERBATIM somewhere natural in the closing paragraph, "
-        f'exactly as written and without altering or translating it: "{line}"'
-    )
-
-
-def _build_prompt(
-    cv_md: str,
-    job_description: str,
-    company: str,
-    job_title: str,
-    lang: str,
-    relocation_line: str,
-) -> str:
-    template = COVER_LETTER_PROMPT_FILE.read_text(encoding="utf-8")
-    return (
-        template.replace("{{COMPANY}}", company)
-        .replace("{{JOB_TITLE}}", job_title)
-        .replace("{{JOB_DESCRIPTION}}", job_description.strip())
-        .replace("{{CV}}", cv_md.strip())
-        .replace("{{PROJECTS_LIST}}", PROJECTS_LIST_FILE.read_text(encoding="utf-8").strip())
-        .replace("{{LANGUAGE}}", LANGS[lang])
-        .replace("{{RELOCATION_RULE}}", _relocation_rule(relocation_line))
-        .replace("{{SIGN_OFF}}", SIGN_OFFS[lang])
-    )
-
-
-def _call_model(prompt: str) -> str:
-    """One plain, cheap request. Deliberately NOT generator._call_model.
-
-    That one reads settings.claude_effort, which would fire adaptive thinking and a
-    64k max_tokens ceiling at a 200-word letter. Two model-specific details here:
-      * no temperature — Sonnet 5 rejects a non-default temperature/top_p/top_k with
-        a 400. The letter is generated once per job, so there is no re-roll to vary;
-        tone comes from the prompt file instead.
-      * thinking is disabled EXPLICITLY — on Sonnet 5 an omitted `thinking` runs
-        adaptive by default (same trap generator.py:150-155 documents).
-    """
-    message = _client().messages.create(
-        model=settings.cover_letter_model,
-        max_tokens=MAX_TOKENS,
-        thinking={"type": "disabled"},
-        messages=[{"role": "user", "content": prompt}],
-    )
-    u = getattr(message, "usage", None)
-    if u is not None:
-        logger.info(
-            "Cover letter token usage: input=%s output=%s (model=%s)",
-            getattr(u, "input_tokens", "?"),
-            getattr(u, "output_tokens", "?"),
-            settings.cover_letter_model,
-        )
-    return "".join(
-        block.text for block in message.content if getattr(block, "type", "") == "text"
+        "Şu cümleyi kapanış paragrafında doğal bir yere BİREBİR koy; değiştirme, "
+        f'çevirme: "{line}"'
     )
 
 
@@ -199,7 +134,7 @@ def _extract_letter(full_response: str) -> str:
     """Pull the letter out of <LETTER_START>..<LETTER_END>, tolerating a stray fence."""
     m = _LETTER_RE.search(full_response)
     body = m.group(1) if m else full_response
-    letter = _strip_fence(body)
+    letter = strip_fence(body)
     if not letter:
         raise ValueError("Model returned an empty cover letter.")
     return letter
@@ -228,6 +163,74 @@ def _read_letter(path: Path) -> str:
     return _META_RE.sub("", path.read_text(encoding="utf-8"), count=1).strip()
 
 
+def letter_inputs(cv_no: int, lang: str, row: Row | None = None) -> dict:
+    """Mektup agent'ının ihtiyaç duyduğu her şeyi toplar ve eksik varsa erkenden durur.
+
+    İki yer kullanır: get_or_create (agent'ı boşuna başlatmamak için ön kontrol) ve
+    cv-tools MCP sunucusunun cover_letter_context aracı (agent'a girdiyi vermek için).
+    Böylece kontroller ve relocation kuralı tek yerde kalır.
+
+    Raises FileNotFoundError / ValueError with user-facing Turkish messages.
+    """
+    if lang not in LANGS:
+        raise ValueError(f"Bilinmeyen dil: {lang!r} (geçerli: {', '.join(LANGS)})")
+    _load_cv(cv_no)  # CV yoksa ya da boşsa burada anlaşılır mesajla durur
+    joblookup.load_saved_jd(cv_no)
+
+    if row is None:
+        rows = SheetsClient().get_rows()
+        row = joblookup.find_row_for_cv_no(rows, cv_no)
+        if row is None:
+            raise FileNotFoundError(f"CV No {cv_no} sheet'te bulunamadı.")
+
+    company = row.get(COL_COMPANY)
+    job_title = row.get(COL_POZISYON)
+    if not company or not job_title:
+        # A letter with the wrong (or a missing) company name is worthless, and unlike
+        # the CV there is nothing safe to fall back on. Say so instead of guessing.
+        raise ValueError(
+            f"CV {cv_no}: sheet satır {row.number}'de şirket (J) veya pozisyon (L) boş — "
+            f"mektup üretilemez. Önce o hücreleri doldurun."
+        )
+
+    relocation_line = _relocation_line(row.work_mode, row.city, lang)
+    return {
+        "cv_no": cv_no,
+        "lang": lang,
+        "language": LANGS[lang],
+        "company": company,
+        "job_title": job_title,
+        "cv_path": str(settings.markdown_dir / f"cv_{cv_no}.md"),
+        "job_description_path": str(
+            settings.job_description_dir / f"job_description_{cv_no}.md"
+        ),
+        "projects_path": str(PROJECTS_LIST_FILE),
+        "relocation_line": relocation_line,
+        "relocation_rule": _relocation_rule(relocation_line),
+        "sign_off": SIGN_OFFS[lang],
+        "output_path": str(cover_letter_path(cv_no, lang)),
+    }
+
+
+def save_letter(cv_no: int, lang: str, text: str) -> Path:
+    """Agent'ın yazdığı mektubu doğrulayıp diske yazar (cv-tools.save_cover_letter).
+
+    İmza bloğu birebir SIGN_OFFS[lang] ile bitmeli: düzyazı kuralı ("Ersin Isgor olarak
+    imzala") zaman zaman yok sayılıyordu ve imzasız mektup forma öyle yapıştırılıyordu.
+    """
+    if lang not in LANGS:
+        raise ValueError(f"Bilinmeyen dil: {lang!r} (geçerli: {', '.join(LANGS)})")
+    letter = _extract_letter(text)
+    if not letter.rstrip().endswith(SIGN_OFFS[lang]):
+        raise ValueError(
+            "Mektup imza bloğuyla birebir bitmeli:\n" + SIGN_OFFS[lang]
+        )
+    path = cover_letter_path(cv_no, lang)
+    _write(path, cv_no, lang, letter)
+    logger.info("Cover letter written: %s", path)
+    return path
+
+
 def get_or_create(
     cv_no: int,
     lang: str = "en",
@@ -250,36 +253,21 @@ def get_or_create(
         logger.info("Cover letter cache hit: %s", path)
         return _read_letter(path), False
 
-    cv_md = _load_cv(cv_no)
-    job_description = joblookup.load_saved_jd(cv_no)
-
-    if row is None:
-        rows = SheetsClient().get_rows()
-        row = joblookup.find_row_for_cv_no(rows, cv_no)
-        if row is None:
-            raise FileNotFoundError(f"CV No {cv_no} sheet'te bulunamadı.")
-
-    company = row.get(COL_COMPANY)
-    job_title = row.get(COL_POZISYON)
-    if not company or not job_title:
-        # A letter with the wrong (or a missing) company name is worthless, and unlike
-        # the CV there is nothing safe to fall back on. Say so instead of guessing.
-        raise ValueError(
-            f"CV {cv_no}: sheet satır {row.number}'de şirket (J) veya pozisyon (L) boş — "
-            f"mektup üretilemez. Önce o hücreleri doldurun."
-        )
-
-    relocation_line = _relocation_line(row.work_mode, row.city, lang)
+    # Ön kontrol: eksik CV / ilan metni / şirket adı varsa agent'ı hiç başlatma.
+    inputs = letter_inputs(cv_no, lang, row=row)
     logger.info(
-        "Generating cover letter for CV %d (%s @ %s, lang=%s, relocation=%r).",
+        "Generating cover letter for CV %d (%s @ %s, lang=%s) via the cover-letter agent.",
         cv_no,
-        job_title,
-        company,
+        inputs["job_title"],
+        inputs["company"],
         lang,
-        relocation_line or "(none — remote)",
     )
-    prompt = _build_prompt(cv_md, job_description, company, job_title, lang, relocation_line)
-    letter = _extract_letter(_call_model(prompt))
-    _write(path, cv_no, lang, letter)
-    logger.info("Cover letter written: %s", path)
-    return letter, True
+    before = path.stat().st_mtime_ns if path.exists() else None
+    result = agent_runner.run_cover_letter(cv_no, lang, force=force)
+    after = path.stat().st_mtime_ns if path.exists() else None
+    if after is None or after == before:
+        raise RuntimeError(
+            f"Mektup agent'ı CV {cv_no} ({lang}) için dosya üretmedi: "
+            f"{result.text or 'ayrıntı için state/agent.log'}"
+        )
+    return _read_letter(path), True
