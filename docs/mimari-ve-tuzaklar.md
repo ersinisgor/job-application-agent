@@ -79,9 +79,11 @@ uzun metni bağlamında taşımaz ve biçim eski CV'lerle uyumlu kalır.
   zaten kapalı.
 - `check_cv_output.py` (PostToolUse): yalnızca `cv_<no>_(analysis|review).md` için çalışır; CV'yi
   `.docx`'i üreten ayrıştırıcıyla okur. İşaretçiler, `### ` ile başlama, deneyim girdisi sayısı ve
-  maddeleri, proje sayısı (= şablondaki yuva sayısı) ve her projenin `Tech:` satırı kontrol edilir.
-  Bozuksa exit 2 → subagent düzeltip yeniden yazar. 192 eski analiz/review dosyasında yapısal yanlış
-  alarm yok (yalnızca `<LANGUAGES>` özelliğinden önceki ≤274 numaralılarda o işaretçi eksik).
+  maddeleri, proje sayısı (= şablondaki yuva sayısı), her projenin `Tech:` satırı ve
+  `cv_output.headline_problems` ile HEADLINE (izinli rol, ≤ 60 karakter, `|` sonrasındaki her öğe
+  `cv_base.md`/`projects.md`'de kelime sınırıyla geçiyor) kontrol edilir. Bozuksa exit 2 → subagent
+  düzeltip yeniden yazar. 192 eski analiz/review dosyasında yapısal yanlış alarm yoktu; 2026-10-23'ten
+  beri HEADLINE'sız eski dosyalar "HEADLINE boş" ile exit 2 verir (cv_base.md artık bölümü taşıyor).
 
 ### Ölçülen maliyet (2026-10-23, Sonnet 5 medium)
 
@@ -177,6 +179,10 @@ bunları artık yazım anında yakalıyor.
   Markdown'dan `pipeline._export_google_doc(no, md)` ile yeniden kuruldu (model çağrısı yok).
 - **CORE SKILLS satır sayısı değişkendir:** saf back-end ilanında `**Frontend:**` satırı çıkarılır;
   `_fill_core_skills()` yuvaları büyütür/küçültür ve kalın etiketi Markdown'dan alır.
+- **`### HEADLINE` (2026-10-23):** adın altındaki rol satırı artık ilana göre değişir (AI Engineer
+  ilanında `AI Engineer | …`). `build_docx` onu SUMMARY'den önceki ikinci boş olmayan paragrafa yazar;
+  bölümü taşımayan eski CV'lerde şablonun satırı kalır, yani eski PDF'ler yeniden basılınca değişmez.
+  Kurallar `05-kalin-ve-cikti-formati.md` → HEADLINE KURALI; değişmezler `cv_output.HEADLINE_*`'da.
 
 ### Tek sayfa: ölçülen bütçe (2026-10-23)
 

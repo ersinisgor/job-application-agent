@@ -94,8 +94,9 @@ print('clean')"
 ```
 
 Extension: `node --check extension/content.js`, sonra `chrome://extensions` → Reload + LinkedIn
-sekmesini yenile. Hook'lar: örnek JSON'u stdin'den ver (`check_cv_output.py`'ye geçerli bir eski
-`cv_<no>_analysis.md` yolu → exit 0). Kural/skill dosyasını değiştirince bir CV üretip kalını-sil
+sekmesini yenile. Hook'lar: örnek JSON'u stdin'den ver (`check_cv_output.py`'ye `### HEADLINE`
+taşıyan geçerli bir `cv_<no>_analysis.md` yolu → exit 0; HEADLINE'sız eski dosyalar artık exit 2
+verir, beklenen bu). Kural/skill dosyasını değiştirince bir CV üretip kalını-sil
 testini uygula (bkz. `docs/mimari-ve-tuzaklar.md` §2).
 
 ## Birlikte değişmesi gerekenler

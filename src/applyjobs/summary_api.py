@@ -380,7 +380,7 @@ _CACHE_MAX = 3000
 # Puanlama kuralları (SYSTEM_PROMPT / prompts/ozet_sistem.md), JobSummary şeması ya da aday profili
 # (profile/cv_base.md / projects.md) her değiştiğinde artır; böylece eski kurallarla dolmuş bir disk
 # önbelleği eski puanları döndürmek yerine atılır.
-_CACHE_VERSION = 14
+_CACHE_VERSION = 15
 
 
 def _load_cache() -> None:

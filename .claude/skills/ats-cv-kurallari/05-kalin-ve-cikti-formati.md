@@ -33,6 +33,28 @@ işaretlerini siler, kelimeler kalır ama vurgu kalmaz.
 
 ---
 
+# ⚠️ HEADLINE KURALI (KRİTİK)
+
+`### HEADLINE` bölümü, PDF'te adayın adının hemen altında görünen **tek satırdır** ve işe alımcının
+ilk okuduğu yerdir. Biçim: `<Rol> | <öğe>, <öğe> & <öğe>` — MEVCUT CV'deki gibi
+`Backend Developer | Node.js (NestJS) & .NET`.
+
+- **Rol** ADIM 6.5'te seçtiğin hedef rolü izler ve YALNIZCA şunlardan biri olabilir: `Backend
+  Developer`, `Backend Engineer`, `Full-Stack Developer`, `Full-Stack Engineer`, `Software
+  Developer`, `Software Engineer`, `AI Engineer`, `AI Developer`. İlanın unvanına en yakın olanı seç
+  (ilan "Engineer" diyorsa Engineer). Kıdem kelimesi YOK (Senior, Lead, Principal, Junior…).
+- **`|` sonrası** ilanın en çok vurguladığı 2–3 öğedir ve her biri MEVCUT CV'de ya da PROJE
+  LİSTESİ'nde **birebir** geçmelidir (Hard-Tech kilidi burada da geçerli). AI Engineer için CORE
+  SKILLS'teki AI terimleri de kullanılabilir (ör. `AI Engineer | Python, RAG & AI Agents`).
+- **En fazla 60 karakter** — daha uzunu ikinci satıra kayar ve CV'yi tek sayfadan taşırır.
+- İlan MEVCUT CV'nin hedefiyle aynıysa (Node.js/.NET backend) satırı **değiştirme**.
+- Değişen kelimeler, diğer bölümlerdeki gibi **kalın** (diff) yazılır.
+
+Doğrulama hook'u rolü, uzunluğu ve her öğenin profilde geçtiğini kodla kontrol eder; uymazsa dosyayı
+düzeltip yeniden yazman istenir.
+
+---
+
 # ⚠️ SUMMARY KAPANIŞ CÜMLESİ KURALI (KRİTİK)
 
 Orkestratörün bu satır için verdiği **SUMMARY KAPANIŞ CÜMLESİ KURALI**'nı aynen uygula. Kural
@@ -110,7 +132,7 @@ bulduğun her sorunu sessizce DÜZELT ve ancak ondan sonra düzeltilmiş sürüm
 5. **Kalın = doğru diff** (MEVCUT CV'ye göre): sadece değişen/eklenen kelimeler kalın; orijinalden
    değişmeyen her şey düz.
 6. **Tek sayfa:** her madde ~bir satıra sığıyor (genişlik sınırı olarak yukarıdaki iki referans satırı
-   kullan); en fazla 2 madde kayıyor; her Selected Projects girdisi 3–4 madde + bir `Tech:` satırı
+   kullan); en fazla 2 madde kayıyor; HEADLINE tek satır (≤ 60 karakter); her Selected Projects girdisi 3–4 madde + bir `Tech:` satırı
    tutuyor; Summary kapanış cümlesi yukarıdaki kurala uyuyor.
 
 `<MATCH_RATE>` değerini bu nihai, öz denetimden geçmiş sürüme göre ver.
@@ -132,8 +154,8 @@ arada BAŞKA HİÇBİR ŞEY olmadan (yorum yok, kod bloğu yok) yazmalısın:
 **YAPISAL SADAKAT — optimize edilmiş CV ORİJİNAL "MEVCUT CV"yi BİREBİR yansıtmalıdır:**
 
 - Orijinaldeki BİREBİR AYNI bölüm başlıklarını, aynı sırayla, AYNI sayıda `#` karakteriyle kullan:
-  `### SUMMARY`, `### CORE SKILLS`, `### EXPERIENCE`, `### SELECTED PROJECTS`, `### EDUCATION`,
-  `### PREVIOUS EXPERIENCE`. Girdi başlıkları orijinaldeki gibi `####` kalır.
+  `### HEADLINE`, `### SUMMARY`, `### CORE SKILLS`, `### EXPERIENCE`, `### SELECTED PROJECTS`,
+  `### EDUCATION`, `### PREVIOUS EXPERIENCE`. Girdi başlıkları orijinaldeki gibi `####` kalır.
 - AYNI satır sonlarını ve yerleşimi koru: CORE SKILLS ve proje `Tech:` satırlarının sonundaki `<br>`
   etiketleri, `*` madde stili, `Tech:` satırları ve boş satırlar — hepsi orijinaldeki gibi.
 - Orijinal yapıda olmayan hiçbir şey EKLEME: ad/iletişim başlığı yok, e-posta/telefon/link satırı yok,

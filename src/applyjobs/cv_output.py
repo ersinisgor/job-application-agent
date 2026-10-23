@@ -32,6 +32,53 @@ BASE_RELOCATION_SENTENCE = "Open to relocation and on-site or hybrid opportuniti
 ONSITE_WORK_MODES = {"on-site", "onsite", "on site", "hybrit", "hybrid"}
 
 
+# ### HEADLINE: CV'nin adın altındaki tek satırı, "<Rol> | <Teknoloji>, <Teknoloji> & <Teknoloji>".
+# Rol ADIM 6.5'in rol aileleriyle sınırlı (kıdem yok: aday güçlü junior, "Junior" da yazılmaz);
+# '|' sonrasındaki her öğe profilde (cv_base.md + projects.md) geçmeli — Hard-Tech kilidinin
+# kodda zorlanan hali. Sınırı aşan satır şablonda ikinci satıra kayar ve sayfayı taşırır.
+HEADLINE_MAX_CHARS = 60
+HEADLINE_ROLES = (
+    "Backend Developer", "Backend Engineer",
+    "Full-Stack Developer", "Full-Stack Engineer",
+    "Software Developer", "Software Engineer",
+    "AI Engineer", "AI Developer",
+)
+_HEADLINE_SPLIT_RE = re.compile(r"\s*(?:[,&()/]|\band\b)\s*")
+
+
+def headline_problems(headline: str, profile_text: str) -> list[str]:
+    """HEADLINE satırının kurallara uymayan yanlarını Türkçe listeler (boş liste = geçerli)."""
+    if not headline:
+        return ["HEADLINE boş (`### HEADLINE` altında tek satır olmalı)."]
+    problems: list[str] = []
+    if len(headline) > HEADLINE_MAX_CHARS:
+        problems.append(
+            f"HEADLINE {len(headline)} karakter; en fazla {HEADLINE_MAX_CHARS} (yoksa ikinci "
+            "satıra kayar ve CV tek sayfayı aşar)."
+        )
+    role, sep, stack = headline.partition("|")
+    if not sep:
+        problems.append("HEADLINE `<Rol> | <teknolojiler>` biçiminde olmalı.")
+    if role.strip() not in HEADLINE_ROLES:
+        problems.append(
+            f"HEADLINE rolü {role.strip()!r} izinli değil; şunlardan biri olmalı: "
+            + ", ".join(HEADLINE_ROLES) + "."
+        )
+    # Kelime sınırıyla: düz alt dize araması "Go"yu "Google"/"MongoDB" içinde bulup geçirirdi.
+    missing = [
+        item.strip() for item in _HEADLINE_SPLIT_RE.split(stack)
+        if item.strip() and not re.search(
+            r"(?<!\w)" + re.escape(item.strip()) + r"(?!\w)", profile_text, re.IGNORECASE
+        )
+    ]
+    if missing:
+        problems.append(
+            "HEADLINE'daki şu öğeler MEVCUT CV'de ya da PROJE LİSTESİ'nde yok (Hard-Tech kilidi): "
+            + ", ".join(missing) + "."
+        )
+    return problems
+
+
 def relocation_instruction(work_mode: str, city: str) -> str:
     """Satırın çalışma şekli ve şehrinden SUMMARY kapanış cümlesi kuralını üretir.
 

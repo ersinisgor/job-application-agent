@@ -61,8 +61,8 @@ LİSTESİ'nde ya da temel CV'de geçen teknolojileri kullan.
    çıktıyı, bağlamı ve sonucu hâlâ desteklemeli. Kalın tarz ve Hard-Practice kelimesi ekleyebilir;
    asla bir teknoloji ya da yeni bir konu ekleyemez.
 3. **Yapı sadakati — ORİJİNAL temel CV ile BİREBİR aynı olmalı:** aynı `#` seviyeleriyle aynı bölüm
-   başlıkları (`### SUMMARY`, `### CORE SKILLS`, `### EXPERIENCE`, `### SELECTED PROJECTS`,
-   `### EDUCATION`, `### PREVIOUS EXPERIENCE`), aynı `<br>` / `Tech:` satırları, `*` maddeler, boş
+   başlıkları (`### HEADLINE`, `### SUMMARY`, `### CORE SKILLS`, `### EXPERIENCE`,
+   `### SELECTED PROJECTS`, `### EDUCATION`, `### PREVIOUS EXPERIENCE`), aynı `<br>` / `Tech:` satırları, `*` maddeler, boş
    satırlar. Ad/iletişim başlığı YOK, yatay çizgi (`---`) YOK, emoji YOK, ekstra bölüm YOK.
    **Proje başlıkları GitHub Markdown linkleri olmalı** `#### [Title](https://github.com/...)` —
    gösterilen proje için PROJE LİSTESİ'ndeki doğru GitHub URL'siyle; yanlış/eksik proje linkini düzelt.
@@ -72,7 +72,8 @@ LİSTESİ'nde ya da temel CV'de geçen teknolojileri kullan.
    - "Built a production-style RAG platform that ingests documents, generates embeddings, and provides AI-powered Q&A with source attribution"
    - "Developed NestJS services for ingestion pipelines, vector retrieval, query rewriting, confidence scoring, and token-budgeted context assembly"
    En fazla 2 madde ikinci satıra kayabilir (şablonda yalnızca 2 boş satır var); şişirme. Her projeyi
-   3–4 madde + bir `Tech:` satırında tut.
+   3–4 madde + bir `Tech:` satırında tut. HEADLINE `05-kalin-ve-cikti-formati.md`'deki HEADLINE
+   KURALI'na uymalı (izinli rol, profildeki öğeler, ≤ 60 karakter).
 6. **Summary kapanış cümlesi kuralı:** orkestratörün verdiği SUMMARY KAPANIŞ CÜMLESİ KURALI'nı
    birebir uygula.
 

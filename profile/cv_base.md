@@ -1,3 +1,6 @@
+### HEADLINE
+Backend Developer | Node.js (NestJS) & .NET
+
 ### SUMMARY
 Backend Developer focused on building scalable REST APIs and backend systems using Node.js (NestJS) and .NET. Experienced in designing modular architectures, implementing authentication/authorization, working with PostgreSQL, and containerizing services with Docker. Comfortable owning features end-to-end and delivering production-ready backend applications in startup environments. Open to relocation and on-site or hybrid opportunities.
 

@@ -155,6 +155,9 @@ olan teknolojileri kullan (ADIM 6 kural 3).
   search, AI agents, prompt engineering) ve AI/RAG projesiyle başla; backend satırını güçlü tut.
   `Frontend:` satırını yalnızca ilan front-end'e dönükse tut.
 
+Seçtiğin rol `### HEADLINE` satırını da belirler (ör. AI Engineer ilanında `AI Engineer | …`);
+kuralları `05-kalin-ve-cikti-formati.md` → HEADLINE KURALI.
+
 Her CORE SKILLS satırının içinde, ilanın vurguladığı teknolojiler önce gelecek şekilde yeniden
 sırala. Rol istiyor diye profilde olmayan bir teknolojiyi asla ekleme (ADIM 6 kural 3). `Frontend:`
 satırını tutma/çıkarma kuralının tam hali ÇIKTI BİÇİMİ bölümündedir (`05-kalin-ve-cikti-formati.md`)

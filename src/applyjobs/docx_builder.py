@@ -6,9 +6,10 @@ boyutlar, aralıklar, kenar boşlukları, kalın etiketler ve proje başlığı 
 korunur. Fazladan kalın eklenmez: Markdown ** işaretleri düz metne indirilir, örnek CV ile
 birebir eşleşir.
 
-Dokunulmayan alanlar (fotoğraf, ad, slogan, iletişim satırı, "Software Developer -
-Başlangıç Noktası" deneyimi ve Education bloğunun tamamı) hiç aranmaz; şablondaki gibi
-aynen kalırlar.
+Adın altındaki rol satırı (headline) Markdown'daki `### HEADLINE` bölümünden doldurulur; o
+bölümü taşımayan eski CV'lerde şablonun kendi satırı kalır. Dokunulmayan alanlar (fotoğraf, ad,
+iletişim satırı, deneyim girdi başlıkları ve Education bloğunun tamamı) hiç aranmaz; şablondaki
+gibi aynen kalırlar.
 """
 from __future__ import annotations
 
@@ -91,6 +92,7 @@ def parse_markdown_cv(md: str) -> dict:
     """Üretilen CV Markdown'unu yapılandırılmış, düz metin bölümlere ayrıştırır."""
     lines = md.splitlines()
     section = None
+    headline: list[str] = []
     summary: list[str] = []
     core_skills: list[str] = []
     experience: list[dict] = []
@@ -116,7 +118,10 @@ def parse_markdown_cv(md: str) -> dict:
             # 'NoneType' object has no attribute 'startswith'.
             continue
 
-        if section == "SUMMARY":
+        if section == "HEADLINE":
+            headline.append(_strip_md(stripped))
+
+        elif section == "SUMMARY":
             summary.append(_strip_md(stripped))
 
         elif section == "CORE SKILLS":
@@ -151,6 +156,8 @@ def parse_markdown_cv(md: str) -> dict:
             previous_exp.append(_strip_md(stripped))
 
     return {
+        # Eski CV'lerde (2026-10-23 öncesi) bu bölüm yok: "" → şablonun satırı kalır.
+        "headline": " ".join(headline).strip(),
         "summary": " ".join(summary).strip(),
         "core_skills": core_skills,
         # Belge sırasıyla her EXPERIENCE girdisi, her biri {title, bullets}. Hepsi şablona doldurulur —
@@ -357,8 +364,15 @@ def build_docx(markdown_cv: str) -> bytes:
     doc = Document(str(CV_TEMPLATE_FILE))
     paras = doc.paragraphs
 
-    # --- SUMMARY: SUMMARY başlığından sonraki ilk boş olmayan paragraf ---
+    # --- HEADLINE: SUMMARY'den önceki boş olmayan paragraflar sırasıyla ad, rol satırı, iletişim ---
     i = _find_header(paras, "SUMMARY")
+    if data["headline"]:
+        top = [p for p in paras[:i] if _para_text(p).strip()]
+        if len(top) < 2:
+            raise ValueError("Template headline line not found above SUMMARY")
+        _replace_content(top[1], data["headline"], keep_prefix_nodes=0)
+
+    # --- SUMMARY: SUMMARY başlığından sonraki ilk boş olmayan paragraf ---
     for p in paras[i + 1:]:
         if _para_text(p).strip():
             _replace_content(p, data["summary"], keep_prefix_nodes=0)

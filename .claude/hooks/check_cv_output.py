@@ -24,21 +24,30 @@ _TARGET = re.compile(r"cv_\d+_(analysis|review)\.md$")
 
 def _problems(text: str, is_review: bool) -> list[str]:
     from src.applyjobs import cv_output, docx_builder
-    from src.applyjobs.config import CV_BASE_FILE
+    from src.applyjobs.config import CV_BASE_FILE, PROJECTS_LIST_FILE
 
     problems: list[str] = []
     if "<CV_START>" not in text or "<CV_END>" not in text:
         return ["<CV_START> / <CV_END> işaretçileri yok — CV dosyadan çıkarılamaz."]
     cv_md = cv_output.extract_cv(text)
     if not cv_md.startswith("### "):
-        problems.append("CV `### ` ile başlayan bir bölüm başlığıyla başlamıyor (ilk satır `### SUMMARY` olmalı).")
+        problems.append(
+            "CV `### ` ile başlayan bir bölüm başlığıyla başlamıyor (ilk satır MEVCUT CV'deki gibi "
+            "`### HEADLINE` olmalı)."
+        )
     if re.search(r"<MATCH_RATE>\s*\d+(?:\.\d+)?\s*</MATCH_RATE>", text) is None:
         problems.append("<MATCH_RATE>sayı</MATCH_RATE> işaretçisi yok ya da sayı değil.")
     if not is_review and "<LANGUAGES>" not in text:
         problems.append("<LANGUAGES>…</LANGUAGES> işaretçisi yok (dil yoksa boş bırak ama işaretçiyi yaz).")
 
-    base = docx_builder.parse_markdown_cv(CV_BASE_FILE.read_text(encoding="utf-8"))
+    base_md = CV_BASE_FILE.read_text(encoding="utf-8")
+    base = docx_builder.parse_markdown_cv(base_md)
     cv = docx_builder.parse_markdown_cv(cv_md)
+    # MEVCUT CV HEADLINE taşıyorsa (2026-10-23'ten beri) yazılan CV de taşımalı. Eski dosyalarda
+    # bölüm yok; o zaman cv_base de taşımıyorsa kontrol atlanır.
+    if base["headline"]:
+        profile = base_md + "\n" + PROJECTS_LIST_FILE.read_text(encoding="utf-8")
+        problems += cv_output.headline_problems(cv["headline"], profile)
     if not cv["summary"]:
         problems.append("SUMMARY okunamadı.")
     if not cv["core_skills"]:
