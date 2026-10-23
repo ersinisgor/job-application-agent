@@ -1,4 +1,6 @@
-# job-apply-agent
+# Job Application Agent
+
+**Multi-Agent CV Automation on Claude Code + LinkedIn Assistant**
 
 Kişisel iş aramam için kurduğum bir **Claude Code agent sistemi**. İki işi var:
 

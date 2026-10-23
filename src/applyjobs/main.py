@@ -30,7 +30,7 @@ def main() -> None:
 
     huntr_enabled = bool(settings.huntr_board_url)
     log.info(
-        "job-apply-agent started. Polling every %ds | CV agent model=%s effort=%s | "
+        "Job Application Agent started. Polling every %ds | CV agent model=%s effort=%s | "
         "CV generation=%s | Huntr=%s | output=%s",
         settings.poll_interval,
         settings.cv_model,

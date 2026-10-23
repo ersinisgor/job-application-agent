@@ -33,7 +33,7 @@ Backend Developer focused on building scalable REST APIs and backend systems usi
 * Built a Next.js frontend with chat interface, document management, streaming responses, and retrieval analytics dashboard <br>
 Tech: NestJS, Next.js, TypeScript, PostgreSQL (pgvector), Supabase, OpenAI API, LangChain, Tailwind CSS
 
-#### [Job Application Agent - Multi-Agent CV Automation (Claude Code + MCP)](https://github.com/ersinisgor/job-apply-agent)
+#### [Job Application Agent - Multi-Agent CV Automation (Claude Code + MCP)](https://github.com/ersinisgor/job-application-agent)
 * Built a multi-agent system on Claude Code where an orchestrator delegates each job to CV-writer, reviewer and cover-letter subagents
 * Developed a custom MCP server in Python exposing deterministic tools for job scraping, spreadsheet locking and Google Docs/PDF export
 * Enforced guardrails with least-privilege tool permissions, Claude Code hooks, prompt-injection defense and output validation

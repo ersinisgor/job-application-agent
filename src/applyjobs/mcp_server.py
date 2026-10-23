@@ -34,7 +34,7 @@ logger = logging.getLogger("applyjobs.mcp")
 server = MCPServer(
     name="cv-tools",
     instructions=(
-        "job-apply-agent'ın deterministik araçları: aday satırlar, ilan okuma, CV'yi "
+        "Job Application Agent'ın deterministik araçları: aday satırlar, ilan okuma, CV'yi "
         "sonlandırma (docx → Google Doc → PDF + sheet), yeniden üretim ve mektup."
     ),
 )
