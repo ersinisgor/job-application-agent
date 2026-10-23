@@ -16,20 +16,23 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 load_dotenv(PROJECT_ROOT / ".env")
 
 CONFIG_DIR = PROJECT_ROOT / "config"
+# The candidate's facts (CV + projects): the single source of truth every agent reads.
+PROFILE_DIR = PROJECT_ROOT / "profile"
+TEMPLATES_DIR = PROJECT_ROOT / "templates"
 CREDENTIALS_DIR = PROJECT_ROOT / "credentials"
 STATE_DIR = PROJECT_ROOT / "state"
 # Generated CVs, analyses, job descriptions and cover letters (gitignored).
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 
 # Config asset files
-CV_BASE_FILE = CONFIG_DIR / "cv_base.md"
-PROJECTS_LIST_FILE = CONFIG_DIR / "projects.md"
+CV_BASE_FILE = PROFILE_DIR / "cv_base.md"
+PROJECTS_LIST_FILE = PROFILE_DIR / "projects.md"
 ATS_PROMPT_FILE = CONFIG_DIR / "ats_prompt.md"
 ATS_REVIEW_PROMPT_FILE = CONFIG_DIR / "ats_review_prompt.md"
 COVER_LETTER_PROMPT_FILE = CONFIG_DIR / "cover_letter_prompt.md"
 
 # Config asset: the .docx template for the Google Docs output
-CV_TEMPLATE_FILE = CONFIG_DIR / "cv_template.docx"
+CV_TEMPLATE_FILE = TEMPLATES_DIR / "cv_template.docx"
 
 # Credential files
 SERVICE_ACCOUNT_FILE = CREDENTIALS_DIR / "service_account.json"
