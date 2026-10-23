@@ -1,12 +1,11 @@
-"""Run the LinkedIn Job Summary API (backend for the browser extension).
+"""LinkedIn İlan Özeti API'sini çalıştırır (tarayıcı eklentisinin backend'i).
 
-Usage:
+Kullanım:
     python scripts/run_summary_api.py
     SUMMARY_API_PORT=8001 python scripts/run_summary_api.py
 
-The extension expects the API on http://localhost:8000 by default. If you change
-the port, update extension/background.js (BACKEND_URL) and manifest.json
-(host_permissions) accordingly.
+Eklenti API'yi varsayılan olarak http://localhost:8000'de bekler. Portu değiştirirsen
+extension/background.js'i (BACKEND_BASE) ve manifest.json'u (host_permissions) da güncelle.
 """
 from __future__ import annotations
 
@@ -23,8 +22,8 @@ from src.applyjobs.summary_api import app  # noqa: E402
 
 
 def main() -> None:
-    # Before uvicorn.run: its dictConfig leaves existing loggers alone, so the root
-    # handler added here survives and the app's own lines land next to the access log.
+    # uvicorn.run'dan önce: onun dictConfig'i var olan logger'lara dokunmaz; yani burada eklenen kök
+    # handler hayatta kalır ve uygulamanın kendi satırları erişim logunun yanına düşer.
     setup_console_logging()
     port = int(os.getenv("SUMMARY_API_PORT", "8000"))
     uvicorn.run(app, host="127.0.0.1", port=port)

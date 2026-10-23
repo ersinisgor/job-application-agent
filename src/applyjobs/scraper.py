@@ -1,13 +1,14 @@
-"""Job-description scraper using Playwright.
+"""Playwright ile iş ilanı okuyucu (scraper).
 
-Goes to whatever URL is in the sheet's "İlan Linki" (K) column — company career
-sites or LinkedIn. LinkedIn pages are read in their public (guest) view.
+Sheet'in "İlan Linki" (K) sütunundaki URL'ye gider — şirket kariyer siteleri ya da
+LinkedIn. LinkedIn sayfaları herkese açık (misafir) görünümüyle okunur. cv-tools MCP
+sunucusunun prepare_job aracı ve poller'ın info-only yolu kullanır.
 
-SECURITY NOTE: do NOT load the user's LinkedIn session (linkedin_state.json) into
-this automated browser. LinkedIn detects its session cookie coming from a headless/
-automated browser, flags the account, and invalidates ALL of the user's sessions
-(constant sign-outs in the real Chrome). LinkedIn serves only the guest view to
-automation anyway, so the cookie gained nothing.
+GÜVENLİK NOTU: kullanıcının LinkedIn oturumunu (linkedin_state.json) bu otomatik tarayıcıya
+YÜKLEME. LinkedIn oturum çerezinin başsız/otomatik bir tarayıcıdan geldiğini fark eder,
+hesabı işaretler ve kullanıcının BÜTÜN oturumlarını geçersiz kılar (gerçek Chrome'da sürekli
+oturum kapanması). LinkedIn otomasyona zaten yalnızca misafir görünümünü sunuyor; yani çerez
+hiçbir şey kazandırmıyordu.
 """
 from __future__ import annotations
 
@@ -23,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class JobPage:
-    """Structured data read from a job posting page."""
+    """Bir iş ilanı sayfasından okunan yapılandırılmış veri."""
 
     url: str
     description: str
@@ -32,11 +33,11 @@ class JobPage:
     company_url: str = ""
     city: str = ""
     work_type: str = ""   # Full-Time / Part-Time / Contract
-    easy_apply: str = ""  # "Yok" for non-LinkedIn; "" for LinkedIn (not detectable)
+    easy_apply: str = ""  # LinkedIn dışı için "Yok"; LinkedIn için "" (tespit edilemiyor)
 
 
-# Canonical spelling for common cities (keys are Turkish-folded + lowercased, so both
-# "Eskisehir" and "Eskişehir" resolve here).
+# Yaygın şehirlerin kanonik yazımı (anahtarlar Türkçe harfleri sadeleştirilmiş + küçük harf;
+# yani hem "Eskisehir" hem "Eskişehir" buraya çözülür).
 _CITY_MAP = {
     "istanbul": "İstanbul",
     "izmir": "İzmir",
@@ -47,7 +48,7 @@ _CITY_MAP = {
     "mersin": "Mersin",
 }
 
-# Fold Turkish-specific letters so spelling variants map to the same key (length-preserving).
+# Türkçeye özgü harfleri sadeleştir ki yazım farkları aynı anahtara düşsün (uzunluk korunur).
 _TR_FOLD = str.maketrans(
     {
         "İ": "i", "I": "i", "ı": "i",
@@ -61,8 +62,8 @@ def _city_key(s: str) -> str:
     return s.translate(_TR_FOLD).lower().strip()
 
 
-# LinkedIn metro-area labels: 'Greater İzmir', 'İzmir Metropolitan Area', 'İzmir ve
-# Çevresi' all mean the city itself — strip the modifier down to the bare city.
+# LinkedIn metro bölge etiketleri: 'Greater İzmir', 'İzmir Metropolitan Area', 'İzmir ve
+# Çevresi' hepsi şehrin kendisi demek — niteleyiciyi atıp yalın şehre indir.
 _AREA_PREFIXES = ("greater ",)
 _AREA_SUFFIXES = (
     " metropolitan area",
@@ -77,7 +78,7 @@ _AREA_SUFFIXES = (
 def _strip_area(s: str) -> str:
     """'Greater İzmir' -> 'İzmir'; 'İzmir Metropolitan Area' -> 'İzmir'."""
     out = (s or "").strip()
-    low = _city_key(out)  # length-preserving, so slicing by len() stays aligned
+    low = _city_key(out)  # uzunluk korunur, yani len() ile dilimleme hizalı kalır
     for p in _AREA_PREFIXES:
         if low.startswith(p):
             out = out[len(p):].strip()
@@ -91,11 +92,11 @@ def _strip_area(s: str) -> str:
 
 
 def _clean_city(text: str) -> str:
-    """LinkedIn location like 'Istanbul, Istanbul, Türkiye' -> 'İstanbul', and metro
-    labels like 'Greater İzmir' -> 'İzmir'.
+    """'Istanbul, Istanbul, Türkiye' gibi bir LinkedIn konumu -> 'İstanbul', ve 'Greater İzmir'
+    gibi metro etiketleri -> 'İzmir'.
 
-    Strips metro-area modifiers, drops duplicated segments, keeps the first (city), and
-    canonicalizes spelling.
+    Metro bölge niteleyicilerini siler, tekrarlanan parçaları atar, ilkini (şehir) tutar ve
+    yazımı kanonikleştirir.
     """
     text = (text or "").strip()
     if not text:
@@ -130,7 +131,7 @@ _USER_AGENT = (
     "(KHTML, like Gecko) Chrome/124.0 Safari/537.36"
 )
 
-# Selectors LinkedIn uses for the job description body (logged-in and public views).
+# LinkedIn'in ilan açıklaması gövdesi için kullandığı seçiciler (girişli ve herkese açık görünüm).
 _LINKEDIN_SELECTORS = [
     ".jobs-description__content",
     ".jobs-box__html-content",
@@ -138,8 +139,8 @@ _LINKEDIN_SELECTORS = [
     ".description__text",
 ]
 
-# On LinkedIn the job content is followed by recommendation sections we don't want.
-# Cut everything from the first of these markers onward.
+# LinkedIn'de ilan içeriğinin ardından istemediğimiz öneri bölümleri gelir. Bu işaretçilerin
+# ilkinden itibaren her şeyi kes.
 _LINKEDIN_END_MARKERS = [
     "More jobs",
     "People also viewed",
@@ -165,7 +166,7 @@ def _clean_html_to_text(html: str) -> str:
         tag.decompose()
     text = soup.get_text(separator="\n")
     lines = [ln.strip() for ln in text.splitlines()]
-    # Collapse blank lines and drop very short navigational fragments left over.
+    # Boş satırları birleştir ve geride kalan çok kısa gezinme parçalarını at.
     cleaned: list[str] = []
     for ln in lines:
         if not ln:
@@ -188,8 +189,8 @@ class Scraper:
     def __enter__(self) -> "Scraper":
         self._pw = sync_playwright().start()
         self._browser = self._pw.chromium.launch(headless=self._headless)
-        # Guest context on purpose — never attach the user's LinkedIn session here
-        # (see the security note in the module docstring).
+        # Bilerek misafir bağlamı — kullanıcının LinkedIn oturumunu buraya asla bağlama
+        # (bkz. modül açıklamasındaki güvenlik notu).
         self._context = self._browser.new_context(user_agent=_USER_AGENT)
         return self
 
@@ -204,15 +205,15 @@ class Scraper:
             self._pw.stop()
 
     def fetch_description(self, url: str) -> str:
-        """Backward-compatible: just the description text."""
+        """Geriye dönük uyumlu: sadece açıklama metni."""
         return self.fetch_job(url).description
 
     def fetch_job(self, url: str) -> JobPage:
-        """Read the job page once: description + structured fields.
+        """İlan sayfasını bir kez okur: açıklama + yapılandırılmış alanlar.
 
-        LinkedIn only serves its public (guest) view to automation, so fields come
-        from the public-view DOM (top card + job-criteria list), with a JSON-LD
-        fallback for non-LinkedIn career sites.
+        LinkedIn otomasyona yalnızca herkese açık (misafir) görünümünü sunar; yani alanlar herkese
+        açık görünümün DOM'undan (üst kart + iş kriterleri listesi) gelir, LinkedIn dışı kariyer
+        siteleri için JSON-LD yedeğiyle.
         """
         if not url:
             raise ValueError("Empty job URL")
@@ -250,8 +251,9 @@ class Scraper:
         return text
 
     def _extract_fields(self, page) -> dict:
-        """Title/company(+url)/city/employment-type from the LinkedIn public view,
-        falling back to JSON-LD JobPosting (covers many non-LinkedIn career sites)."""
+        """LinkedIn herkese açık görünümünden başlık/şirket(+url)/şehir/istihdam türü; JSON-LD
+        JobPosting'e düşer (LinkedIn dışı birçok kariyer sitesini kapsar).
+        """
         def text_of(sel: str) -> str:
             el = page.query_selector(sel)
             return (el.inner_text() or "").strip() if el else ""
@@ -307,7 +309,7 @@ class Scraper:
         return {}
 
     def _extract_linkedin(self, page) -> str:
-        # Click "show more" if present so the full description is in the DOM.
+        # Varsa "show more"a tıkla ki açıklamanın tamamı DOM'da olsun.
         for sel in (
             "button.show-more-less-html__button",
             "button[aria-label*='more']",
@@ -332,6 +334,6 @@ class Scraper:
 
 
 def fetch_description(url: str, headless: bool = True) -> str:
-    """Convenience one-shot fetch (opens and closes its own browser)."""
+    """Tek seferlik kolay okuma (kendi tarayıcısını açıp kapatır)."""
     with Scraper(headless=headless) as s:
         return s.fetch_description(url)

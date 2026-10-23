@@ -1,11 +1,11 @@
-// Service worker: forwards requests from the content script to the Python backend.
-// Doing the fetch here keeps it independent of the LinkedIn page origin and allows
-// CORS-free access via host_permissions.
+// Service worker: content script'ten gelen istekleri Python backend'ine iletir.
+// fetch'i burada yapmak onu LinkedIn sayfasının kökeninden bağımsız tutar ve host_permissions
+// sayesinde CORS'suz erişim sağlar.
 
 const BACKEND_BASE = "http://localhost:8000";
 
-// Message type -> backend path. host_permissions already covers localhost:8000/*,
-// so adding a route needs no manifest change.
+// Mesaj türü -> backend yolu. host_permissions zaten localhost:8000/*'ı kapsıyor,
+// yani yeni bir rota eklemek manifest değişikliği gerektirmez.
 const ROUTES = {
   SUMMARIZE: "/summarize",
   COVER_LETTER: "/cover-letter",
@@ -28,7 +28,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
           const body = await res.json();
           if (body?.detail) detail = body.detail;
         } catch (_) {
-          /* body is not JSON; keep the default message */
+          /* gövde JSON değil; varsayılan mesajı koru */
         }
         sendResponse({ ok: false, error: detail });
         return;
@@ -44,6 +44,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       });
     });
 
-  // Keep the message channel open for the async response.
+  // Asenkron cevap için mesaj kanalını açık tut.
   return true;
 });

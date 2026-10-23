@@ -1,3 +1,6 @@
+### HEADLINE
+Backend Developer | Node.js (NestJS) & .NET
+
 ### SUMMARY
 Backend Developer focused on building scalable REST APIs and backend systems using Node.js (NestJS) and .NET. Experienced in designing modular architectures, implementing authentication/authorization, working with PostgreSQL, and containerizing services with Docker. Comfortable owning features end-to-end and delivering production-ready backend applications in startup environments. Open to relocation and on-site or hybrid opportunities.
 
@@ -30,6 +33,13 @@ Backend Developer focused on building scalable REST APIs and backend systems usi
 * Built a Next.js frontend with chat interface, document management, streaming responses, and retrieval analytics dashboard <br>
 Tech: NestJS, Next.js, TypeScript, PostgreSQL (pgvector), Supabase, OpenAI API, LangChain, Tailwind CSS
 
+#### [Job Application Agent - Multi-Agent CV Automation (Claude Code + MCP)](https://github.com/ersinisgor/job-apply-agent)
+* Built a multi-agent system on Claude Code where an orchestrator delegates each job to CV-writer, reviewer and cover-letter subagents
+* Developed a custom MCP server in Python exposing deterministic tools for job scraping, spreadsheet locking and Google Docs/PDF export
+* Enforced guardrails with least-privilege tool permissions, Claude Code hooks, prompt-injection defense and output validation
+* Built a Chrome MV3 extension with a FastAPI backend that summarizes LinkedIn jobs via the Claude API and scores technology fit <br>
+Tech: Python, Claude Code, MCP, Claude API, FastAPI, Pydantic, Playwright, Chrome Extension
+
 #### [English Vocabulary Trainer - Full-Stack Learning Platform (Ongoing)](https://github.com/ersinisgor/English_Vocabulary_Trainer)
 * Built a full-stack learning platform with NestJS and Next.js using scalable, modular architecture and clean design principles
 * Developed a customizable exercise engine with dynamic filtering, algorithm-driven scheduling logic, and flexible learning workflows
@@ -43,12 +53,6 @@ Tech: NestJS, Next.js, TypeScript, PostgreSQL, Prisma ORM, JWT, Docker, Jest, Sw
 * Designed relational schema with TypeORM and validations
 * Structured project using layered modular architecture <br>
 Tech: NestJS, TypeScript, PostgreSQL, TypeORM, JWT
-
-#### [Cloud File Storage Platform – Microservices (.NET)](https://github.com/ersinisgor/.NET-Cloud-File-Storage-Microservice)
-* Built secure file upload/download microservices using ASP.NET Core
-* Designed JWT-based authentication and API Gateway architecture
-* Applied CQRS with MediatR, integrated PostgreSQL persistence, and containerized services with Docker <br>
-Tech: ASP.NET Core, Microservices, PostgreSQL, JWT, MediatR, Docker
 
 ### EDUCATION
 Anadolu University - Computer Programming (GPA: 3.71 / 4.00) | 2024–2025

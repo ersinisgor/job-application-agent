@@ -1,16 +1,25 @@
-"""Orchestration: detect new rows, generate CVs, save files, write back CV No."""
+"""CV hattının deterministik adımları: aday satır seçimi, ilan okuma, çıktı kaydetme,
+Google Doc/PDF dışa aktarımı.
+
+Burada model çağrısı YOK. CV'yi /cv-uret command'ı ile cv-writer subagent'ı üretir;
+bu modüldeki fonksiyonları ise cv-tools MCP sunucusu (mcp_server.py) ve poller döngüsü
+(main.py) çağırır. Değişmez kurallar (iki koşullu tetik, tekrar kontrolü, Kalkmış
+işaretçisi, numaralandırma tabanı) bilerek burada, Python'da duruyor: LLM akışı yönetir
+ama bu kuralları değiştiremez.
+"""
 from __future__ import annotations
 
 import json
 import logging
 import re
+from pathlib import Path
 
-from . import docx_builder, drive_docs, generator, huntr, joblookup
+from . import docx_builder, drive_docs, huntr, joblookup
 from .reporting import record_duplicate, record_failure
 from .config import (
+    CV_TRIGGER_BASVURU_VALUES,
     HUNTR_SEEN_FILE,
     NO_CV_MARKER,
-    SKIP_BASVURU_VALUES,
     STATE_DIR,
     settings,
 )
@@ -19,8 +28,8 @@ from .sheets import Row, SheetsClient
 
 logger = logging.getLogger(__name__)
 
-# Highest CV number ever assigned. Acts as a floor so a transient bad read of the
-# sheet can never reset numbering to a low value and clobber existing CVs.
+# Bugüne kadar verilmiş en yüksek CV numarası. Taban görevi görür: sheet'in geçici olarak
+# hatalı okunması numaralandırmayı asla düşük bir değere sıfırlayıp var olan CV'lerin üzerine yazamaz.
 LAST_CV_FILE = STATE_DIR / "last_cv_no"
 
 
@@ -40,8 +49,8 @@ def save_last_cv_no(value: int) -> None:
 # Huntr import
 # --------------------------------------------------------------------------- #
 
-# Consecutive scans where the board returned no jobs. After a couple in a row we alert
-# once (likely an expired Huntr session), but a single transient empty read is ignored.
+# Board'un hiç ilan döndürmediği art arda taramalar. Arka arkaya birkaç kez olursa bir kez uyarırız
+# (büyük olasılıkla Huntr oturumu kapanmış), ama tek bir geçici boş okuma yok sayılır.
 _huntr_empty_streak = 0
 
 
@@ -49,21 +58,21 @@ def _norm_url(url: str) -> str:
     return url.split("?", 1)[0].strip()
 
 
-# LinkedIn job id inside the link, e.g. .../jobs/view/4427414076/... -> 4427414076.
-# This is exactly what column M (İlan Numarası) extracts from K via its formula.
+# Linkin içindeki LinkedIn ilan no'su, ör. .../jobs/view/4427414076/... -> 4427414076.
+# M sütununun (İlan Numarası) formülüyle K'dan çıkardığı değer tam olarak budur.
 _LINKEDIN_ID_RE = re.compile(r"/jobs/view/(\d+)")
 
 
 def _job_key(link: str) -> str:
-    """Stable per-posting identity for de-duplication.
+    """Tekrar kontrolü için ilan başına sabit kimlik.
 
-    For LinkedIn links it is the job id (the value column M computes from K) — the
-    most reliable signal, since the same posting can have many tracking URLs. For
-    non-LinkedIn links it falls back to the query-stripped URL. Empty link -> "".
+    LinkedIn linklerinde ilan no'sudur (M sütununun K'dan hesapladığı değer) — en güvenilir
+    işaret, çünkü aynı ilanın birçok izleme URL'si olabilir. LinkedIn dışı linklerde sorgu
+    kısmı atılmış URL'ye düşer. Boş link -> "".
 
-    We derive the id from K rather than reading column M directly: M is a spreadsheet
-    formula, so openpyxl returns the formula text (and Google's cached value can be
-    missing for a freshly appended row) — computing it from K is equivalent and robust.
+    No'yu M sütununu doğrudan okumak yerine K'dan türetiyoruz: M bir sheet formülü, yani
+    openpyxl formül metnini döndürür (ve yeni eklenmiş bir satır için Google'ın önbellekteki
+    değeri eksik olabilir) — K'dan hesaplamak eşdeğer ve sağlam.
     """
     if not link:
         return ""
@@ -89,19 +98,19 @@ def save_huntr_seen(keys: set[str]) -> None:
 
 
 def sync_huntr_to_sheet() -> int:
-    """Import newly-saved Huntr board jobs into the sheet. Returns rows appended.
+    """Huntr board'una yeni kaydedilen ilanları sheet'e aktarır. Eklenen satır sayısını döndürür.
 
-    OFF by default now — the extension panel's "Ekle" button (summary_api's /add-job) is
-    the primary "new job -> sheet row" source. This stays here, inert, unless
-    HUNTR_BOARD_URL is set again.
+    Artık varsayılan olarak KAPALI — extension panelinin "Ekle" butonu (summary_api'nin
+    /add-job'u) birincil "yeni ilan -> sheet satırı" kaynağı. Bu kod, HUNTR_BOARD_URL yeniden
+    ayarlanmadıkça burada etkisiz durur.
 
-    Identity is the job id (column M / _job_key), not createdAt. We keep a persisted set
-    of board job keys we've already handled ('seen'). Each scan, a key that newly appears
-    on the board is either:
-      - imported (not in the sheet yet), or
-      - flagged as a DUPLICATE (already in the sheet — no CV produced; the user is alerted
-        via record_duplicate), then marked seen so it's only reported once.
-    First run baselines the current board (imports nothing, no backlog dump).
+    Kimlik createdAt değil, ilan no'sudur (M sütunu / _job_key). Daha önce işlediğimiz board
+    ilan anahtarlarının kalıcı bir kümesini ('seen') tutarız. Her taramada board'da yeni
+    görünen bir anahtar ya:
+      - içe aktarılır (henüz sheet'te değil), ya da
+      - TEKRAR olarak işaretlenir (zaten sheet'te — CV üretilmez; kullanıcı record_duplicate
+        ile uyarılır), sonra görüldü sayılır ki yalnızca bir kez bildirilsin.
+    İlk çalışma mevcut board'u başlangıç kabul eder (hiçbir şey aktarmaz, birikmiş yığın dökülmez).
     """
     if not settings.huntr_board_url:
         return 0
@@ -111,7 +120,7 @@ def sync_huntr_to_sheet() -> int:
     if not jobs:
         _huntr_empty_streak += 1
         logger.info("Huntr: no jobs found on the board.")
-        if _huntr_empty_streak == 2:  # alert once; ignore a single transient empty read
+        if _huntr_empty_streak == 2:  # bir kez uyar; tek bir geçici boş okumayı yok say
             record_failure(
                 "huntr_board",
                 error="Board okunamadı — Huntr oturumu kapanmış olabilir. "
@@ -124,7 +133,7 @@ def sync_huntr_to_sheet() -> int:
     seen = load_huntr_seen()
     first_run = seen is None
 
-    # Fast path: established run with nothing new on the board -> no need to read the sheet.
+    # Hızlı yol: board'da yeni bir şey olmayan olağan çalışma -> sheet'i okumaya gerek yok.
     if not first_run and not (board_keys - seen):
         logger.info("Huntr: no new jobs to import.")
         return 0
@@ -136,38 +145,37 @@ def sync_huntr_to_sheet() -> int:
             existing_by_key.setdefault(_job_key(r.link), r.number)
 
     if first_run:
-        # First run / migration: baseline ONLY the board jobs already tracked in the sheet,
-        # so we don't spam duplicate alerts for the backlog. Board jobs NOT in the sheet stay
-        # unseen and are imported below — genuinely pending jobs are never swallowed.
+        # İlk çalışma / geçiş: YALNIZCA sheet'te zaten takip edilen board ilanlarını başlangıç kabul et,
+        # böylece birikmiş yığın için tekrar uyarısı yağmaz. Sheet'te OLMAYAN board ilanları görülmemiş
+        # kalır ve aşağıda aktarılır — gerçekten bekleyen ilanlar asla yutulmaz.
         seen = board_keys & existing_by_key.keys()
         logger.info("Huntr first run: baselined %d board job(s) already in the sheet.", len(seen))
 
-    # In info-only mode we save the job info straight from Huntr (reliable, captured at
-    # save time) and mark N so no CV is produced — instead of re-scraping the job page,
-    # which is often an expired/stale LinkedIn view that yields wrong or missing fields.
+    # Info-only modunda ilan bilgisini doğrudan Huntr'dan kaydederiz (güvenilir, kaydetme anında
+    # alınmış) ve N'yi işaretleriz ki CV üretilmesin — ilan sayfasını yeniden okumak yerine; o sayfa
+    # çoğu zaman yanlış ya da eksik alan veren, süresi geçmiş/bayat bir LinkedIn görünümüdür.
     info_only = not settings.cv_generation
 
-    new_keys = board_keys - seen  # jobs we haven't handled yet
+    new_keys = board_keys - seen  # henüz işlemediğimiz ilanlar
     to_import: list[dict] = []
     for j in jobs:
         key = _job_key(j["url"])
         if key not in new_keys:
             continue
         if key in existing_by_key:
-            # Newly added to Huntr but already tracked in the sheet -> alert, don't import.
+            # Huntr'a yeni eklenmiş ama sheet'te zaten takip ediliyor -> uyar, aktarma.
             record_duplicate(j["url"], key, existing_by_key[key])
             continue
         entry = {"url": j["url"]}
         if info_only:
-            # Fill only the reliable identity fields (company J, title L) from Huntr's
-            # own record — NOT a re-scrape. City is intentionally left blank: Huntr's
-            # geocoded location is often wrong (e.g. "Krizan Bay"), so F/H/C are left
-            # for the user to fill rather than writing bad data.
+            # Yalnızca güvenilir kimlik alanlarını (şirket J, başlık L) Huntr'ın kendi kaydından doldur —
+            # yeniden okuma DEĞİL. Şehir bilerek boş bırakılır: Huntr'ın coğrafi konumu çoğu zaman yanlış
+            # (ör. "Krizan Bay"), bu yüzden F/H/C hatalı veri yazmak yerine kullanıcıya bırakılır.
             entry["company"] = j.get("company", "")
             entry["title"] = j.get("title", "")
         to_import.append(entry)
 
-    # Mark everything currently on the board as handled so each job is processed once.
+    # Board'da şu an olan her şeyi işlendi say ki her ilan bir kez işlensin.
     save_huntr_seen(set(seen) | board_keys)
 
     if not to_import:
@@ -184,29 +192,31 @@ def sync_huntr_to_sheet() -> int:
 
 
 def is_candidate(row: Row) -> bool:
-    """A row needs a CV when it has a link, no CV No yet, and a non-skip Başvuru.
+    """Bir satır, linki varsa, henüz CV No'su yoksa ve B "Üretilecek" diyorsa CV bekler.
 
-    The CV No (column N) is the single source of truth: filled = done, empty = to do.
-    This makes 'delete row + re-add the same job' work — the fresh row has an empty N
-    so it is processed again, regardless of any past run.
+    Bir değil, iki koşul. N sütunu (CV No) hâlâ "bu zaten yapıldı mı?" sorusunu cevaplar —
+    dolu = yapıldı, boş = yapılacak — 'satırı sil + aynı ilanı yeniden ekle'yi çalıştıran
+    budur. Ama boş bir N artık bir üretim harcamak için yeterli değil: Başvuru sütunu (B),
+    kullanıcının gerçekten başvururken koyduğu bir CV_TRIGGER_BASVURU_VALUES değeri
+    taşımalı. Panelden eklenen satır B boş gelir ve sadece bekler.
     """
     if not row.link:
         return False
-    if row.cv_no:  # already has a CV number
+    if row.cv_no:  # zaten bir CV numarası var
         return False
-    if row.basvuru in SKIP_BASVURU_VALUES:
+    if row.basvuru not in CV_TRIGGER_BASVURU_VALUES:
         return False
     return True
 
 
 def find_candidates(rows: list[Row]) -> list[Row]:
-    """Candidate rows, with duplicate postings removed.
+    """Tekrar eden ilanları atılmış aday satırlar.
 
-    A row is skipped (no CV) when another row already covers the same posting (same
-    İlan Numarası / job id, column M derived from K):
-      - another row already has a CV No (column N) for that posting, OR
-      - an earlier candidate row in this same scan already claimed it.
-    So each distinct posting yields exactly one CV, even if the link is added twice.
+    Başka bir satır aynı ilanı zaten kapsıyorsa (aynı İlan Numarası / ilan no, K'dan türetilen
+    M sütunu) satır atlanır (CV yok):
+      - başka bir satırın o ilan için zaten bir CV No'su (N sütunu) varsa, YA DA
+      - bu taramadaki daha önceki bir aday satır onu zaten sahiplendiyse.
+    Böylece link iki kez eklense bile her farklı ilan tam olarak bir CV verir.
     """
     done_keys = {_job_key(r.link) for r in rows if r.cv_no and r.link}
     candidates: list[Row] = []
@@ -226,25 +236,34 @@ def find_candidates(rows: list[Row]) -> list[Row]:
     return candidates
 
 
-def _save_outputs(cv_no: int, cv_md: str, full_response: str, job_description: str) -> None:
+def save_job_description(cv_no: int, job_description: str) -> Path:
+    """İlan metnini job_description_<no>.md olarak kaydeder ve yolunu döndürür.
+
+    cv-writer subagent'ı ilanı bu dosyadan okur; /cv-yenile ve mektup da sonradan aynı
+    dosyayı kullanır (ilan LinkedIn'den kalksa bile).
+    """
+    settings.ensure_dirs()
+    jd_path = settings.job_description_dir / f"job_description_{cv_no}.md"
+    jd_path.write_text(job_description, encoding="utf-8")
+    return jd_path
+
+
+def save_cv_markdown(cv_no: int, cv_md: str) -> Path:
+    """Analiz dosyasından çıkarılan temiz CV'yi cv_<no>.md olarak kaydeder."""
     settings.ensure_dirs()
     cv_path = settings.markdown_dir / f"cv_{cv_no}.md"
-    analysis_path = settings.analysis_dir / f"cv_{cv_no}_analysis.md"
-    jd_path = settings.job_description_dir / f"job_description_{cv_no}.md"
-
     cv_path.write_text(cv_md, encoding="utf-8")
-    analysis_path.write_text(full_response, encoding="utf-8")
-    jd_path.write_text(job_description, encoding="utf-8")
     logger.info("Saved CV -> %s", cv_path)
+    return cv_path
 
 
 def _export_google_doc(cv_no: int, cv_md: str) -> None:
-    """Build the .docx from the template, upload it to Drive as a Google Doc, and
-    download that Doc back as a PDF into the local PDFs folder.
+    """Şablondan .docx'i kurar, Drive'a Google Doc olarak yükler ve o Doc'u PDF olarak yerel
+    PDF klasörüne geri indirir.
 
-    The .docx is only an in-memory intermediary (Drive converts it to a Doc); no local
-    .docx is kept. Best-effort: a failure here must not undo the Markdown CV that already
-    succeeded. A single Drive client is reused so credentials load only once.
+    .docx yalnızca bellekte bir ara üründür (Drive onu Doc'a çevirir); yerelde .docx tutulmaz.
+    Best-effort: buradaki bir hata, zaten başarılı olmuş Markdown CV'yi geri almamalı. Kimlik
+    bilgileri bir kez yüklensin diye tek bir Drive istemcisi yeniden kullanılır.
     """
     try:
         docx_bytes = docx_builder.build_docx(cv_md)
@@ -254,23 +273,29 @@ def _export_google_doc(cv_no: int, cv_md: str) -> None:
         (settings.pdf_dir / f"cv_{cv_no}.pdf").write_bytes(pdf_bytes)
     except Exception as exc:  # noqa: BLE001
         logger.exception("Google Doc/PDF export failed for cv_%d (Markdown CV still saved).", cv_no)
-        # The Markdown CV + sheet row still succeed, so this would otherwise be silent —
-        # record it so a missing Google Doc/PDF is noticed.
+        # Markdown CV + sheet satırı yine de başarılı olur; yani bu başka türlü sessiz kalırdı —
+        # eksik bir Google Doc/PDF fark edilsin diye kaydet.
         record_failure("drive_export", cv_no=cv_no, error=repr(exc))
 
 
 def _scrape_fields(row: Row, scraper: Scraper, allow_staged: bool = False):
-    """Scrape the job page once and return (JobPage, fields).
+    """İlan sayfasını bir kez okur ve (JobPage, fields) döndürür.
 
-    `fields` are the only-empty column values to write to the sheet. Shared by the
-    CV-generation path and the info-only (CV_GENERATION off) path.
+    `fields`, sheet'e yazılacak yalnızca-boşsa sütun değerleridir. CV üretim yolu (cv-tools
+    prepare_job) ve info-only (CV_GENERATION kapalı) yolu tarafından paylaşılır.
 
-    allow_staged: when the scrape fails and the panel staged this posting's text
-    (state/pending_jd/<job_id>.md, written by /add-job), build a description-only JobPage
-    from it instead of propagating the error — the CV is then grounded in exactly what
-    the user read in the panel. City/work type/easy-apply stay empty, which is harmless:
-    _fill_page_fields skips empty values, so the J/L written at append time survive.
-    Only the CV path passes True (see _process_info_only).
+    allow_staged: scrape başarısız olursa ve panel bu ilanın metnini kaydettiyse
+    (state/pending_jd/<job_id>.md, /add-job yazar), hatayı yaymak yerine ondan sadece
+    açıklama içeren bir JobPage kurar — CV tam olarak kullanıcının panelde okuduğu metne
+    dayanır. Şehir/çalışma tipi/easy-apply boş kalır, bu zararsız: _fill_page_fields boş
+    değerleri atlar, böylece satır eklenirken yazılan J/L korunur.
+
+    CV yolu dahil varsayılan olarak KAPALI. Tetik B == "Üretilecek"e taşındığından beri
+    kullanıcı satırı başvuru anında işaretler; yani başarısız bir scrape büyük olasılıkla
+    ilanın kalktığı anlamına gelir — ve kimsenin başvuramayacağı bir ilan için CV, ertelenmiş
+    tetiğin önlemek için var olduğu israfın ta kendisidir. prepare_job (mcp_server) bunun
+    yerine EXPIRED_MARKER yazar. Yine de kaydedilmiş metinden zorla üretmek için True geçir
+    (run_once.py --allow-staged).
     """
     try:
         jp = scraper.fetch_job(row.link)
@@ -281,13 +306,13 @@ def _scrape_fields(row: Row, scraper: Scraper, allow_staged: bool = False):
             else ""
         )
         if not staged:
-            raise  # unchanged behaviour: the row is retried on the next scan
+            raise  # davranış değişmedi: satır bir sonraki taramada yeniden denenir
         logger.warning(
             "Scrape failed for row %d (%r); falling back to the %d-char description "
             "staged by the panel. City/work type stay empty.",
             row.number, exc, len(staged),
         )
-        # Notify: this CV is grounded in the panel's heuristic text, not the posting page.
+        # Bildir: bu CV ilan sayfasına değil, panelin sezgisel metnine dayanıyor.
         record_failure("scrape_fallback", row=row.number, link=row.link, error=repr(exc))
         jp = JobPage(url=row.link, description=staged)
     else:
@@ -306,167 +331,22 @@ def _scrape_fields(row: Row, scraper: Scraper, allow_staged: bool = False):
     return jp, fields
 
 
-def _generate_and_save(
-    row: Row, cv_no: int, scraper: Scraper
-) -> tuple[float | None, dict, str]:
-    """Scrape the page (description + fields), generate the CV, save outputs.
-
-    Returns (match_rate, fields, languages) where fields are the column values to write
-    (only-empty) to the sheet and languages is the job's top two priority programming
-    languages ("Python, Java") for column Q. G (work mode) is intentionally NOT inferred —
-    it is filled manually — so the relocation sentence uses the row's existing G if set.
-    """
-    jp, fields = _scrape_fields(row, scraper, allow_staged=True)
-
-    work_mode = row.work_mode  # manual (often empty -> default relocation sentence)
-    city = row.city or jp.city
-    full_response, cv_md, match_rate = generator.generate(
-        jp.description, work_mode=work_mode, city=city
-    )
-    languages = generator.extract_languages(full_response)
-
-    # Expert QA second pass (toggle via CV_REVIEW): re-check the draft against the job
-    # (keyword coverage, accuracy, structure, match rate) and fix problems. Fall back
-    # to the draft on error.
-    review_full = ""
-    if settings.cv_review:
-        try:
-            review_full, cv_reviewed, reviewed_rate = generator.review(
-                jp.description, cv_md, work_mode=work_mode, city=city
-            )
-            cv_md = cv_reviewed
-            if reviewed_rate is not None:
-                match_rate = reviewed_rate
-            logger.info("Review pass done for cv_%d (final match rate: %s).", cv_no, match_rate)
-        except Exception:  # noqa: BLE001
-            logger.exception("Review pass failed for cv_%d; using the first draft.", cv_no)
-
-    _save_outputs(cv_no, cv_md, full_response, jp.description)
-    if review_full:
-        settings.ensure_dirs()
-        (settings.analysis_dir / f"cv_{cv_no}_review.md").write_text(review_full, encoding="utf-8")
-    _export_google_doc(cv_no, cv_md)
-
-    return match_rate, fields, languages
-
-
-def _regenerate_one(cv_no: int, row: Row, instruction: str = "") -> float | None:
-    """Regenerate a single CV from its SAVED job description (no re-scrape).
-
-    The original page text was stored as job_description_<no>.md when the CV was first
-    made; re-using it is robust against expired/removed LinkedIn postings and avoids a
-    long burst of scraping. Work mode (G) and city (F) come from the sheet row.
-    `instruction` is an optional per-run user override (regenerate.py --instruction).
-    Overwrites cv_<no>.md/_analysis/_review, updates the same-named Google Doc, and
-    re-downloads its PDF.
-    Returns the final match rate (or None).
-    """
-    job_description = joblookup.load_saved_jd(cv_no)
-
-    work_mode = row.work_mode  # manual G (often empty -> default relocation sentence)
-    city = row.city
-    full_response, cv_md, match_rate = generator.generate(
-        job_description, work_mode=work_mode, city=city, instruction=instruction
-    )
-
-    review_full = ""
-    if settings.cv_review:
-        try:
-            review_full, cv_reviewed, reviewed_rate = generator.review(
-                job_description, cv_md, work_mode=work_mode, city=city, instruction=instruction
-            )
-            cv_md = cv_reviewed
-            if reviewed_rate is not None:
-                match_rate = reviewed_rate
-            logger.info("Review pass done for cv_%d (final match rate: %s).", cv_no, match_rate)
-        except Exception:  # noqa: BLE001
-            logger.exception("Review pass failed for cv_%d; using the first draft.", cv_no)
-
-    _save_outputs(cv_no, cv_md, full_response, job_description)
-    if review_full:
-        settings.ensure_dirs()
-        (settings.analysis_dir / f"cv_{cv_no}_review.md").write_text(review_full, encoding="utf-8")
-    _export_google_doc(cv_no, cv_md)
-    return match_rate
-
-
-def regenerate_cv_range(
-    start: int, end: int, dry_run: bool = False, instruction: str = ""
-) -> int:
-    """Re-generate CVs whose CV No (column N) is in [start, end], keeping the same
-    numbers. Regenerates from each CV's SAVED job description (no re-scrape), overwrites
-    cv_<no>.md/_analysis/_review, updates the same-named Google Doc, re-downloads its PDF,
-    and refreshes Match Rate (P). Other sheet columns are left untouched.
-
-    `instruction` is an optional free-text override applied to EVERY CV in the range as a
-    high-priority directive (which project to drop/feature, emphasis, ordering). Target a
-    single CV with an equal --from/--to when the instruction is CV-specific.
-
-    Uses whatever model/effort the current settings define, so run it with the env
-    overridden to pick a stronger model, e.g.:
-        CLAUDE_MODEL=claude-opus-4-8 CLAUDE_EFFORT=high python scripts/regenerate.py --from 200 --to 219
-    """
-    sheets = SheetsClient()
-    rows = sheets.get_rows()
-
-    targets = joblookup.targets_in_range(rows, start, end)
-
-    if not targets:
-        logger.info("No rows with CV No in [%d, %d].", start, end)
-        return 0
-
-    logger.info(
-        "Regenerating %d CV(s) [%s] from saved job descriptions with model=%s effort=%s (review=%s).",
-        len(targets),
-        ", ".join(str(n) for n, _ in targets),
-        settings.claude_model,
-        settings.claude_effort,
-        settings.cv_review,
-    )
-    if instruction.strip():
-        logger.info("Applying per-run override instruction to each CV: %s", instruction.strip())
-    if dry_run:
-        for n, r in targets:
-            logger.info("  [DRY] CV %d -> sheet row %d", n, r.number)
-        return 0
-
-    count = 0
-    for n, row in targets:
-        logger.info("Regenerating CV %d (row %d) ...", n, row.number)
-        try:
-            match_rate = _regenerate_one(n, row, instruction=instruction)
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("Regeneration failed for CV %d (row %d); skipping.", n, row.number)
-            record_failure("regenerate", row=row.number, cv_no=n, link=row.link, error=repr(exc))
-            continue
-        if match_rate is not None:
-            try:
-                sheets.write_match_rate(row.number, match_rate)
-            except Exception:  # noqa: BLE001
-                logger.exception("Match-rate write failed for CV %d (files were saved).", n)
-        count += 1
-        logger.info("Regenerated CV %d (final match rate: %s).", n, match_rate)
-    return count
-
-
 def _process_info_only(candidates: list[Row], sheets: SheetsClient) -> int:
-    """CV-generation-OFF path: scrape each candidate's page for its info, write the
-    only-empty fields (C/F/H/J/L) to the sheet, and mark N with NO_CV_MARKER so the row
-    is handled once and never assigned a CV (even after the switch is turned back on).
-    No Claude call, no Google Doc, no CV number consumed. Returns rows written.
+    """CV üretimi KAPALI yolu: her adayın sayfasını bilgisi için okur, yalnızca-boşsa alanları
+    (C/F/H/J/L) sheet'e yazar ve N'yi NO_CV_MARKER ile işaretler; satır bir kez işlenir ve ona
+    asla CV atanmaz (anahtar yeniden açıldıktan sonra bile). Claude çağrısı yok, Google Doc yok,
+    CV numarası harcanmaz. Yazılan satır sayısını döndürür.
     """
     count = 0
     with Scraper(headless=True) as scraper:
         for row in candidates:
             logger.info("Processing row %d (info-only, no CV) -> %s", row.number, row.link)
             try:
-                # No allow_staged here, deliberately: this path wants the PAGE's fields,
-                # and a staged JobPage carries none. Falling back would write a permanent
-                # NO_CV_MARKER with zero information gained (and such a row is never
-                # retro-generated). Retrying next scan is the better outcome. In practice
-                # unreachable for panel-added rows anyway: with CV generation off,
-                # /add-job writes the marker at append time, so they never become
-                # candidates.
+                # Burada bilerek allow_staged yok: bu yol SAYFANIN alanlarını istiyor ve kaydedilmiş bir
+                # JobPage hiçbirini taşımaz. Ona düşmek, sıfır bilgi kazancıyla kalıcı bir NO_CV_MARKER yazardı
+                # (ve böyle bir satır asla geriye dönük üretilmez). Bir sonraki taramada yeniden denemek daha iyi
+                # sonuç. Pratikte panelden eklenen satırlar için zaten ulaşılmaz: CV üretimi kapalıyken /add-job
+                # işaretçiyi satır eklerken yazar, yani o satırlar asla aday olmaz.
                 _, fields = _scrape_fields(row, scraper)
             except Exception as exc:  # noqa: BLE001
                 logger.exception(
@@ -487,92 +367,45 @@ def _process_info_only(candidates: list[Row], sheets: SheetsClient) -> int:
     return count
 
 
-def run_scan(
-    dry_run: bool = False,
-    limit: int | None = None,
-    only_row: int | None = None,
-) -> int:
-    """Scan the sheet once and process candidate rows. Returns count processed.
-
-    limit:    process at most this many candidates (sheet order).
-    only_row: process only this sheet row number (must still be a candidate).
-    """
-    sheets = SheetsClient()
-    # Staged descriptions whose row was deleted or never generated. Cheap (the directory
-    # normally holds 0-5 files) and this is the only long-running process that can do it.
-    joblookup.prune_pending_jd()
-    rows = sheets.get_rows()
+def select_candidates(
+    rows: list[Row], only_row: int | None = None, limit: int | None = None
+) -> list[Row]:
+    """find_candidates + isteğe bağlı tek satır / adet sınırı (sheet sırasıyla)."""
     candidates = find_candidates(rows)
-
     if only_row is not None:
         candidates = [r for r in candidates if r.number == only_row]
         if not candidates:
             logger.warning(
                 "Row %d is not a candidate (check: has link? CV No (N) empty? "
-                "Başvuru not in %s?).",
+                "Başvuru (B) one of %s?).",
                 only_row,
-                sorted(SKIP_BASVURU_VALUES),
+                sorted(CV_TRIGGER_BASVURU_VALUES),
             )
     if limit is not None:
         candidates = candidates[:limit]
+    return candidates
 
+
+def scan_candidates(
+    only_row: int | None = None, limit: int | None = None
+) -> tuple[SheetsClient, list[Row]]:
+    """Sheet'i bir kez okuyup aday satırları döndürür. Model çağırmaz.
+
+    Poller döngüsü bununla "iş var mı?" diye bakar; boşsa hiç agent başlatılmaz.
+    """
+    sheets = SheetsClient()
+    # Satırı silinmiş ya da hiç üretilmemiş bekleyen ilan metinleri. Ucuz (klasörde
+    # normalde 0-5 dosya olur) ve bunu yapabilecek tek uzun ömürlü süreç burası.
+    joblookup.prune_pending_jd()
+    rows = sheets.get_rows()
+    return sheets, select_candidates(rows, only_row, limit)
+
+
+def log_candidates(candidates: list[Row]) -> None:
+    """Kuru çalıştırma (--dry-run) çıktısı: adayları listeler, hiçbir şey yazmaz."""
     if not candidates:
         logger.info("No candidate rows to process.")
-        return 0
-
-    mode = "CV generation" if settings.cv_generation else "info-only (CV generation OFF)"
-    logger.info("Processing %d candidate row(s) [%s].", len(candidates), mode)
-    if dry_run:
-        for r in candidates:
-            logger.info(
-                "  [DRY] row %d | Başvuru=%r | %s", r.number, r.basvuru, r.link
-            )
-        return 0
-
-    if not settings.cv_generation:
-        return _process_info_only(candidates, sheets)
-
-    # Never go below the highest number we've ever assigned (floor guard).
-    next_no = max(sheets.next_cv_number(rows), load_last_cv_no() + 1)
-    count = 0
-    with Scraper(headless=True) as scraper:
-        for row in candidates:
-            cv_no = next_no
-            logger.info("Processing row %d -> CV No %d -> %s", row.number, cv_no, row.link)
-
-            # 1) Generate first, WITHOUT touching the sheet yet. This gives any of your
-            #    own edits to this row (B/C/F/G/H...) ~1.5 min to sync to Drive before
-            #    the app writes, and means we touch the sheet only once (less clobbering).
-            try:
-                match_rate, fields, languages = _generate_and_save(row, cv_no, scraper)
-            except Exception as exc:  # noqa: BLE001
-                logger.exception(
-                    "Generation failed for row %d; number not consumed, will retry next scan.",
-                    row.number,
-                )
-                record_failure("generate", row=row.number, link=row.link, error=repr(exc))
-                continue
-
-            # 2) Single sheet write at the end: page-derived fields (only-empty) +
-            #    CV No (N) + Match Rate (P) + priority languages (Q) together.
-            try:
-                sheets.write_processed_row(
-                    row.number, fields, cv_no, match_rate, languages
-                )
-                save_last_cv_no(cv_no)
-                next_no += 1
-                # The description now lives in job_description_<no>.md, which is what
-                # regenerate and the cover letter read. Drop the panel's staging copy.
-                # After the sheet write on purpose: a failed write keeps the fallback
-                # available for the retry.
-                joblookup.clear_pending_jd(joblookup.linkedin_job_id(row.link))
-            except Exception as exc:  # noqa: BLE001
-                logger.exception(
-                    "Sheet write failed for row %d (CV files were saved; will retry next scan).",
-                    row.number,
-                )
-                record_failure("sheet_write", row=row.number, cv_no=cv_no, link=row.link, error=repr(exc))
-                continue
-
-            count += 1
-    return count
+        return
+    logger.info("%d candidate row(s):", len(candidates))
+    for r in candidates:
+        logger.info("  [DRY] row %d | Başvuru=%r | %s", r.number, r.basvuru, r.link)

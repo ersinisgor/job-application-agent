@@ -1,12 +1,12 @@
-"""Read the user's Huntr board via Playwright.
+"""Kullanıcının Huntr board'unu Playwright ile okur.
 
-Huntr exposes no public API for individual accounts, so we drive the logged-in web
-app (huntr.co) and capture the JSON the board loads in the background, then pull job
-records out of it heuristically. This avoids depending on fragile DOM selectors.
+Huntr bireysel hesaplar için herkese açık bir API sunmuyor; bu yüzden girişli web
+uygulamasını (huntr.co) sürer, board'un arka planda yüklediği JSON'u yakalar ve ilan
+kayıtlarını sezgisel olarak çıkarırız. Böylece kırılgan DOM seçicilerine bağımlı kalmayız.
 
-Setup: run `scripts/huntr_login.py` once to save the session. If parsing ever misses
-jobs, run `scripts/huntr_debug.py` to dump the page + captured JSON so the field
-mapping can be refined against the live board.
+Kurulum: oturumu kaydetmek için `scripts/huntr_login.py`'yi bir kez çalıştır. Ayrıştırma bir
+gün ilan kaçırırsa, alan eşlemesi canlı board'a göre iyileştirilebilsin diye sayfayı +
+yakalanan JSON'u dökmek için `scripts/huntr_debug.py`'yi çalıştır.
 """
 from __future__ import annotations
 
@@ -24,15 +24,15 @@ logger = logging.getLogger(__name__)
 
 
 def launch_huntr_context(pw, headless: bool):
-    """Open a persistent real-Chrome context for Huntr.
+    """Huntr için kalıcı, gerçek bir Chrome bağlamı açar.
 
-    Uses the system Chrome (channel="chrome") and removes the automation flags that
-    make Google show "this browser may not be secure" and block sign-in. The session
-    persists in HUNTR_PROFILE_DIR so login is only needed once.
+    Sistem Chrome'unu (channel="chrome") kullanır ve Google'ın "bu tarayıcı güvenli olmayabilir"
+    deyip girişi engellemesine yol açan otomasyon bayraklarını kaldırır. Oturum
+    HUNTR_PROFILE_DIR'de kalır, yani giriş yalnızca bir kez gerekir.
     """
     HUNTR_PROFILE_DIR.mkdir(parents=True, exist_ok=True)
-    # Remove stale Chrome lock files left by a previous crashed/uncleaned run, which
-    # otherwise cause "profile already in use". Safe for our single, sequential use.
+    # Önceki çökmüş/temizlenmemiş bir çalışmadan kalan bayat Chrome kilit dosyalarını sil; yoksa
+    # "profile already in use" hatası verir. Tek ve sıralı kullanımımız için güvenli.
     for lock in ("SingletonLock", "SingletonCookie", "SingletonSocket"):
         try:
             (HUNTR_PROFILE_DIR / lock).unlink()
@@ -43,8 +43,8 @@ def launch_huntr_context(pw, headless: bool):
         headless=headless,
         channel="chrome",
         user_agent=_USER_AGENT,
-        # Drop the automation/no-sandbox flags so Chrome behaves like a normal browser
-        # (no infobars, and Google's "browser not secure" sign-in block is avoided).
+        # Otomasyon/no-sandbox bayraklarını kaldır ki Chrome normal bir tarayıcı gibi davransın
+        # (bilgi çubuğu yok ve Google'ın "tarayıcı güvenli değil" giriş engeli aşılır).
         ignore_default_args=["--enable-automation", "--no-sandbox"],
         args=["--disable-blink-features=AutomationControlled"],
     )
@@ -59,7 +59,7 @@ def _values(x):
 
 
 def _find_board_payload(payloads: list) -> dict | None:
-    """The board payload is the JSON object that carries both 'jobs' and 'companies'."""
+    """Board yükü, hem 'jobs' hem 'companies' taşıyan JSON nesnesidir."""
     for p in payloads:
         if isinstance(p, dict) and "jobs" in p and "companies" in p:
             return p
@@ -67,7 +67,7 @@ def _find_board_payload(payloads: list) -> dict | None:
 
 
 def _normalize_url(url: str) -> str:
-    """Turn a LinkedIn search URL (…currentJobId=ID…) into a clean /jobs/view/ID/."""
+    """Bir LinkedIn arama URL'sini (…currentJobId=ID…) temiz bir /jobs/view/ID/'ye çevirir."""
     url = (url or "").strip()
     if "linkedin.com" in url and "currentJobId=" in url:
         m = re.search(r"currentJobId=(\d+)", url)
@@ -77,10 +77,10 @@ def _normalize_url(url: str) -> str:
 
 
 def _simplify_location(loc: str) -> str:
-    """Reduce Huntr's (sometimes geocoded) address to a short city-like value.
+    """Huntr'ın (bazen coğrafi kodlanmış) adresini kısa, şehir benzeri bir değere indirir.
 
-    'Istanbul, Turkey' -> 'Istanbul'; 'Remote' -> 'Remote'. Drops purely numeric or
-    postal-code segments and keeps the first meaningful part.
+    'Istanbul, Turkey' -> 'Istanbul'; 'Remote' -> 'Remote'. Yalnızca sayısal ya da posta kodu
+    parçalarını atar ve ilk anlamlı kısmı tutar.
     """
     loc = (loc or "").strip()
     if not loc:
@@ -89,13 +89,13 @@ def _simplify_location(loc: str) -> str:
     parts = [
         p for p in parts
         if not re.fullmatch(r"[\d\s\-]+", p)  # "11", "10111"
-        and not re.fullmatch(r"[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d", p)  # postal "R2K 3A5"
+        and not re.fullmatch(r"[A-Za-z]\d[A-Za-z]\s?\d[A-Za-z]\d", p)  # posta kodu "R2K 3A5"
     ]
     return parts[0] if parts else loc.split(",")[0].strip()
 
 
 def parse_board(payload: dict) -> list[dict]:
-    """Join Huntr jobs with companies into {company,title,location,url,description}."""
+    """Huntr ilanlarını şirketlerle {company,title,location,url,description} olarak birleştirir."""
     comp_name = {}
     for c in _values(payload.get("companies")):
         cid = c.get("_id") or c.get("id")
@@ -127,7 +127,7 @@ class HuntrClient:
         self._headless = headless
 
     def _capture_payloads(self, context) -> list:
-        """Load the board and return all JSON response bodies captured during load."""
+        """Board'u yükler ve yükleme sırasında yakalanan bütün JSON cevap gövdelerini döndürür."""
         payloads: list = []
 
         def on_response(resp):
@@ -147,7 +147,7 @@ class HuntrClient:
         return payloads
 
     def fetch_jobs(self) -> list[dict]:
-        """Return jobs from the board: list of {company,title,location,url,description}."""
+        """Board'daki ilanları döndürür: {company,title,location,url,description} listesi."""
         if not settings.huntr_board_url:
             return []
         with sync_playwright() as pw:
@@ -171,7 +171,7 @@ class HuntrClient:
         return result
 
     def dump_debug(self, out_dir: Path) -> None:
-        """Save captured JSON payloads + rendered HTML for finalizing field mapping."""
+        """Alan eşlemesini kesinleştirmek için yakalanan JSON yüklerini + işlenmiş HTML'i kaydeder."""
         out_dir.mkdir(parents=True, exist_ok=True)
         with sync_playwright() as pw:
             context = launch_huntr_context(pw, headless=self._headless)

@@ -1,9 +1,9 @@
-"""Dump the Huntr board (rendered HTML + captured JSON) for finalizing field mapping.
+"""Alan eşlemesini kesinleştirmek için Huntr board'unu (işlenmiş HTML + yakalanan JSON) döker.
 
-Run this after huntr_login.py if job parsing misses fields. It saves files under
-./huntr_debug/ which can be inspected to confirm Huntr's exact JSON shape.
+İlan ayrıştırma alan kaçırırsa bunu huntr_login.py'den sonra çalıştır. Dosyaları
+./huntr_debug/ altına kaydeder; Huntr'ın birebir JSON biçimini doğrulamak için incelenebilir.
 
-Usage:
+Kullanım:
     python scripts/huntr_debug.py
 """
 from __future__ import annotations
@@ -23,7 +23,7 @@ def main() -> None:
     if not settings.huntr_board_url:
         raise SystemExit("Set HUNTR_BOARD_URL in .env first.")
     out = Path(__file__).resolve().parents[1] / "huntr_debug"
-    # headless=False so you can see what loads; close it after it finishes.
+    # headless=False, ne yüklendiğini görebil diye; bitince kapat.
     HuntrClient(headless=False).dump_debug(out)
     print(f"\nDump written to: {out}")
     print("Share board.html + payload_*.json so the field mapping can be finalized.")

@@ -1,26 +1,30 @@
-# The Markdown files in config/ are DATA, not prose: their exact layout is parsed.
+# Bu depodaki Markdown dosyaları düzyazı değil, VERİDİR: tam yerleşimleri ayrıştırılır.
 #
-# - cv_base.md is read back by docx_builder.parse_markdown_cv(), which keys off the
-#   `### `/`#### ` heading levels, the `*` bullet marker, the trailing ` <br>` and the
-#   `Tech:` line sitting directly under the last bullet. Prettier rewrites `*` to `-`,
-#   inserts a blank line after every heading and indents the `Tech:` continuation line,
-#   so a format-on-save silently changes what the generator sees.
-# - The prompt files (ats_prompt.md, ats_review_prompt.md, cover_letter_prompt.md) are
-#   sent to the model verbatim, placeholders and numbering included.
-# - projects.md / projects_list.md are the profile the CV and the fit score are grounded
-#   in; reformatting them only produces noise in the diff.
+# - profile/cv_base.md, docx_builder.parse_markdown_cv() tarafından geri okunur. Ayrıştırıcı
+#   `### `/`#### ` başlık seviyelerine, `*` madde işaretine, sondaki ` <br>`'a ve son
+#   maddenin hemen altındaki `Tech:` satırına bakar. Prettier `*`'ı `-`'ye çevirir, her
+#   başlıktan sonra boş satır ekler ve `Tech:` devam satırını girintiler; yani kaydederken
+#   biçimlendirme, agent'ın gördüğü veriyi sessizce değiştirir.
+# - .claude/ altındaki agent, skill ve command dosyaları ile prompts/ altındaki prompt'lar
+#   modele kelimesi kelimesine gider; işaretçiler ve numaralandırma dahil.
+# - projects.md / projects_list.md, CV'nin ve uyum puanının dayandığı profildir;
+#   yeniden biçimlendirmek diff'te sadece gürültü üretir.
 #
-# Patterns are deliberately unanchored (`**/config/`, not `config/`) so they still
-# match when VS Code's workspace root is a PARENT folder and this ignore file is
-# resolved from there.
-config/
-**/config/
+# Kalıplar bilerek çapasızdır (`profile/` değil `**/profile/`): VS Code'un çalışma alanı
+# kökü bir ÜST klasör olduğunda ve bu dosya oradan çözüldüğünde de eşleşsinler.
+profile/
+**/profile/
+prompts/
+**/prompts/
+.claude/
+**/.claude/
 **/cv_base.md
 **/projects.md
 **/projects_list.md
 **/*_prompt.md
 
-# Generated / vendored
+# Üretilen / dışarıdan gelen
 .venv/
 state/
+outputs/
 credentials/

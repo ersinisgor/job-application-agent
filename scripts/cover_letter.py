@@ -1,17 +1,17 @@
-"""Produce the cover letter for one already-generated CV, on demand.
+"""Daha önce üretilmiş bir CV için, istendiğinde mektup üretir.
 
-Only some applications ask for a cover letter, so letters are made one at a time
-instead of alongside every CV. Built from the job's SAVED CV + job description, so it
-works long after the posting is gone.
+Her başvuru mektup istemez; bu yüzden mektuplar her CV'nin yanında değil, tek tek üretilir.
+İlanın KAYDEDİLMİŞ CV'si + ilan metninden kurulur; ilan kalktıktan çok sonra da çalışır.
+Mektubu cover-letter-writer agent'ı yazar (`claude -p "/mektup ..."`).
 
-A letter is generated exactly once per (CV No, language): re-running prints the saved
-one without calling the model. Use --force to overwrite it.
+Bir mektup (CV No, dil) başına tam bir kez üretilir: yeniden çalıştırmak kaydedileni modeli
+çağırmadan yazdırır. Üzerine yazmak için --force kullan.
 
-Usage:
+Kullanım:
     python scripts/cover_letter.py --cv-no 305
     python scripts/cover_letter.py --cv-no 305 --lang tr
-    python scripts/cover_letter.py --cv-no 305 --force      # regenerate, overwrite
-    python scripts/cover_letter.py --cv-no 305 --no-copy    # don't touch the clipboard
+    python scripts/cover_letter.py --cv-no 305 --force      # yeniden üret, üzerine yaz
+    python scripts/cover_letter.py --cv-no 305 --no-copy    # panoya dokunma
 """
 from __future__ import annotations
 
@@ -29,7 +29,7 @@ from src.applyjobs.reporting import setup_logging  # noqa: E402
 
 
 def _copy(text: str) -> bool:
-    """Put the letter on the macOS clipboard. Best-effort — never fails the run."""
+    """Mektubu macOS panosuna koyar. Best-effort — çalışmayı asla başarısız yapmaz."""
     try:
         subprocess.run(["pbcopy"], input=text, text=True, check=True)
         return True
@@ -63,7 +63,7 @@ def main() -> None:
         text, created = cover_letter.get_or_create(
             args.cv_no, lang=args.lang, force=args.force
         )
-    except (FileNotFoundError, ValueError) as exc:
+    except (FileNotFoundError, ValueError, RuntimeError) as exc:
         log.error("%s", exc)
         raise SystemExit(1)
 

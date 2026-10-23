@@ -1,17 +1,21 @@
-"""Excel (.xlsx) access in Google Drive via a Service Account.
+"""Google Drive'daki Excel (.xlsx) dosyasına bir Servis Hesabı ile erişim.
 
-The job list is kept as a real Excel file in Drive (not converted to native
-Google Sheets). We download the file with the Drive API, read/edit it with
-openpyxl, and re-upload it over the same file id. The assigned CV number is
-written back to column N.
+İş listesi Drive'da gerçek bir Excel dosyası olarak tutulur (yerel Google Sheets'e
+dönüştürülmez). Dosyayı Drive API ile indirir, openpyxl ile okur/düzenler ve aynı dosya
+kimliğinin üzerine yeniden yükleriz. Atanan CV numarası N sütununa geri yazılır.
 """
 from __future__ import annotations
 
 import datetime
+from copy import copy
 import fcntl
 import functools
+import http.client
 import io
+import logging
 import os
+import socket
+import ssl
 import string
 import time
 from contextlib import contextmanager
@@ -26,16 +30,18 @@ from googleapiclient.http import MediaIoBaseDownload, MediaIoBaseUpload
 
 from .config import SERVICE_ACCOUNT_FILE, SHEET_LOCK_FILE, settings
 
-# Drive scope is required to read AND overwrite a user-owned file that was
-# shared with the service account.
+logger = logging.getLogger(__name__)
+
+# Servis hesabıyla paylaşılmış, kullanıcıya ait bir dosyayı okumak VE üzerine yazmak için
+# Drive kapsamı gerekir.
 SCOPES = ["https://www.googleapis.com/auth/drive"]
 
 XLSX_MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
 
-# Column letters we care about (A..Q). Index in this list maps to a row value.
+# İlgilendiğimiz sütun harfleri (A..Q). Bu listedeki indeks, satır değerine karşılık gelir.
 COLUMNS = list(string.ascii_uppercase[:17])  # A..Q
 
-# Friendly aliases for the columns we use directly.
+# Doğrudan kullandığımız sütunlar için okunaklı takma adlar.
 COL_BASVURU = "B"
 COL_CITY = "F"       # Yer
 COL_WORK_MODE = "G"  # Uzaktan: Hybrit / On-site / Remote
@@ -47,22 +53,30 @@ COL_CV_NO = "N"
 COL_MATCH_RATE = "P"  # post-optimization ATS Match Rate
 COL_LANGUAGES = "Q"   # job's top two priority programming languages ("Python, Java")
 
-# 1-based column indexes for openpyxl.
+# openpyxl için 1 tabanlı sütun indeksleri.
 CV_NO_COL_INDEX = COLUMNS.index(COL_CV_NO) + 1        # = 14
 MATCH_RATE_COL_INDEX = COLUMNS.index(COL_MATCH_RATE) + 1  # = 16
 LANGUAGES_COL_INDEX = COLUMNS.index(COL_LANGUAGES) + 1    # = 17
 
-# Font size (points) for the languages cell (Q) — the user wants it small (7pt).
+# E (tarih) sütununun sheet'teki formatı: gerçek tarih değeri + bu biçim. "General" bırakılırsa
+# hücre 46318 gibi bir seri numarası olarak görünür.
+DATE_FORMAT = "dd.MM.yyyy"
+
+# Diller hücresinin (Q) yazı boyutu (punto) — kullanıcı küçük istiyor (7pt).
 LANGUAGES_FONT_SIZE = 7
 
-# Last data row to apply dropdowns to (the sheet has a fixed 1000-row grid).
+# Dropdown'ların uygulanacağı son veri satırı (sheet'in sabit 1000 satırlık ızgarası var).
 DROPDOWN_LAST_ROW = 1000
 
-# Dropdowns (data validations) the user maintains on these columns. openpyxl drops
-# data validations when it re-saves the file, so we re-apply them on every write to
-# keep the user's manual-entry dropdowns intact.
+# Kullanıcının bu sütunlarda tuttuğu dropdown'lar (veri doğrulamaları). openpyxl dosyayı
+# yeniden kaydederken veri doğrulamalarını düşürür; bu yüzden kullanıcının elle giriş
+# dropdown'ları bozulmasın diye her yazımda yeniden uygularız.
 DROPDOWNS: dict[str, list[str]] = {
-    "B": ["Geçmiş", "Vazgeçildi", "✓", "+", "++"],   # Başvuru
+    # Başvuru. "Üretilecek" CV tetiğidir (config.CV_TRIGGER_BASVURU_VALUES) ve tek tık uzakta olsun
+    # diye ilk sırada; geri kalanlar sheet'te gerçekten kullanılan değerler. Bu liste sheet'in
+    # dropdown'ının TA KENDİSİDİR — _apply_dropdowns her yazımda doğrulamaları bundan yeniden kurar,
+    # yani burada olmayan her şey sheet'in kendi dropdown'ından kaybolur.
+    "B": ["Üretilecek", "Olabilir", "Başvurulmuş", "✓", "Geçmiş", "Vazgeçildi"],
     "C": ["Var", "Yok"],                              # Easy Apply
     "G": ["Hybrit", "On-site", "Remote"],            # Uzaktan
     "H": ["Full-Time", "Part-Time", "Contract"],     # Çalışma Şekli
@@ -70,28 +84,29 @@ DROPDOWNS: dict[str, list[str]] = {
 
 
 class SheetLockTimeout(RuntimeError):
-    """Another process held the sheet lock past the timeout."""
+    """Başka bir süreç sheet kilidini zaman aşımından uzun süre tuttu."""
 
 
-_LOCK_TIMEOUT = 120.0  # a download-edit-upload is ~2-6s; 120s means something is wrong
+_LOCK_TIMEOUT = 120.0  # bir indir-düzenle-yükle ~2-6 sn; 120 sn bir şeylerin ters gittiği anlamına gelir
 _LOCK_POLL = 0.25
 
 
 @contextmanager
 def sheet_lock(timeout: float = _LOCK_TIMEOUT):
-    """Serialize a whole download -> openpyxl edit -> upload across PROCESSES.
+    """Bütün bir indir -> openpyxl ile düzenle -> yükle döngüsünü SÜREÇLER arasında sıraya koyar.
 
-    Two writers exist: the CV poller (write_processed_row) and the summary API
-    (/add-job -> append_job_rows, while you browse LinkedIn). Each re-downloads the file,
-    edits it in memory and re-uploads the WHOLE workbook, so without this an append that
-    started before a CV write finished would upload a workbook lacking that CV No —
-    silently undoing it, and the poller would regenerate the CV on the next scan.
+    Birden çok yazar var: CV agent'ının MCP sunucusu (write_processed_row), poller'ın info-only
+    yolu ve özet API'si (/add-job -> append_job_rows, sen LinkedIn'de gezinirken). Her biri
+    dosyayı yeniden indirir, bellekte düzenler ve çalışma kitabının TAMAMINI yeniden yükler;
+    yani bu kilit olmasa, bir CV yazımı bitmeden başlamış bir satır ekleme o CV No'yu içermeyen
+    bir çalışma kitabı yüklerdi — CV No'yu sessizce geri alır ve CV bir sonraki taramada yeniden
+    üretilirdi.
 
-    Advisory flock on state/sheet.lock, non-blocking + retry so we can time out instead
-    of hanging a panel request forever.
+    state/sheet.lock üzerinde danışma flock'u; bloklamayan + yeniden deneme, böylece bir panel
+    isteğini sonsuza kadar asmak yerine zaman aşımına uğrayabiliriz.
 
-    NOT re-entrant: flock on a second open file description of the same file blocks even
-    within one process. Never call one @_locked method from inside another.
+    Yeniden girişli DEĞİL: aynı dosyanın ikinci bir açık dosya tanımı üzerindeki flock, tek bir
+    süreç içinde bile bloklar. Bir @_locked metodu asla başka birinin içinden çağırma.
     """
     SHEET_LOCK_FILE.parent.mkdir(parents=True, exist_ok=True)
     fd = os.open(SHEET_LOCK_FILE, os.O_RDWR | os.O_CREAT, 0o644)
@@ -117,7 +132,7 @@ def sheet_lock(timeout: float = _LOCK_TIMEOUT):
 
 
 def _locked(method):
-    """Wrap a mutating SheetsClient method in the cross-process sheet lock."""
+    """Sheet'i değiştiren bir SheetsClient metodunu süreçler arası sheet kilidiyle sarar."""
 
     @functools.wraps(method)
     def wrapper(self, *args, **kwargs):
@@ -128,7 +143,7 @@ def _locked(method):
 
 
 def _apply_dropdowns(ws) -> None:
-    """(Re)create the user's column dropdowns so they survive the openpyxl round-trip."""
+    """Kullanıcının sütun dropdown'larını openpyxl gidiş-dönüşünden sağ çıksınlar diye (yeniden) kurar."""
     ws.data_validations.dataValidation.clear()
     for col, options in DROPDOWNS.items():
         # Inline list validation: values joined by commas inside double quotes.
@@ -140,10 +155,10 @@ def _apply_dropdowns(ws) -> None:
 
 @dataclass
 class Row:
-    """A single spreadsheet row (1-based sheet row number)."""
+    """Tek bir sheet satırı (1 tabanlı sheet satır numarası)."""
 
-    number: int  # actual sheet row number (header is row 1, data starts at 2)
-    cells: dict[str, str] = field(default_factory=dict)  # column letter -> value
+    number: int  # gerçek sheet satır numarası (başlık 1. satır, veri 2'den başlar)
+    cells: dict[str, str] = field(default_factory=dict)  # sütun harfi -> değer
 
     def get(self, col: str) -> str:
         return self.cells.get(col, "").strip()
@@ -173,11 +188,11 @@ class Row:
         return self.get(COL_ILAN_NO)
 
     def key(self) -> str:
-        """Stable identifier for de-duplication across runs.
+        """Çalışmalar arasında tekrar kontrolü için sabit tanımlayıcı.
 
-        Based on row number + the link without its volatile query string. We avoid
-        column M (İlan Numarası) because it is a spreadsheet formula. The primary
-        guard against re-processing is the CV No written to column N anyway.
+        Satır numarası + değişken sorgu kısmı atılmış link üzerine kurulu. M sütunundan
+        (İlan Numarası) kaçınırız çünkü o bir sheet formülü. Yeniden işlemeye karşı asıl koruma
+        zaten N sütununa yazılan CV No'dur.
         """
         base_link = self.link.split("?", 1)[0]
         return f"row:{self.number}:{base_link}"
@@ -190,17 +205,34 @@ def _cell_to_str(value) -> str:
 
 
 def _link_font(cell) -> Font:
-    """Hyperlink style (blue, underlined) at 10pt, keeping the cell's font family."""
+    """10 puntoda köprü stili (mavi, altı çizili); hücrenin yazı tipi ailesi korunur."""
     return Font(name=cell.font.name, size=10, color="1155CC", underline="single")
 
 
 def _languages_font(cell) -> Font:
-    """Small (7pt) plain font for the languages cell (Q), keeping the cell's font family."""
+    """Diller hücresi (Q) için küçük (7pt) düz yazı tipi; hücrenin yazı tipi ailesi korunur."""
     return Font(name=cell.font.name, size=LANGUAGES_FONT_SIZE)
 
 
+# Başarısız bir istek değil, ölü bir TCP bağlantısı. Özet API'si uzun ömürlü, çoğunlukla boşta
+# duran bir süreç: Google havuzdaki keep-alive bağlantısını birkaç dakika sonra kapatır ve
+# sonraki Drive çağrısı kimsenin dinlemediği bir sokete yazar (BrokenPipeError [Errno 32], ya
+# da reset / SSL EOF / "Remote end closed"). httplib2 yalnızca ENETUNREACH ve EADDRNOTAVAIL'i
+# kendiliğinden yeniden dener; bu yüzden sessiz bir aradan sonraki ilk tıklama panele 500 olarak
+# ulaşıyordu.
+_STALE_CONN_ERRORS = (
+    ConnectionError,  # BrokenPipe / ConnectionReset / ConnectionAborted
+    TimeoutError,  # socket.timeout since 3.10
+    socket.gaierror,  # geçici DNS hatası (ör. dizüstü bilgisayar yeni uyandı)
+    ssl.SSLError,  # includes SSLEOFError
+    http.client.HTTPException,  # RemoteDisconnected, CannotSendRequest, BadStatusLine
+)
+_DRIVE_ATTEMPTS = 3
+_DRIVE_RETRY_SLEEP = 1.0  # saniye, deneme numarasıyla çarpılır
+
+
 class SheetsClient:
-    """Drive-backed reader/writer for the .xlsx job list."""
+    """.xlsx iş listesi için Drive destekli okuyucu/yazıcı."""
 
     def __init__(self) -> None:
         creds = Credentials.from_service_account_file(
@@ -211,15 +243,64 @@ class SheetsClient:
 
     # --- Drive download / upload -------------------------------------------------
 
+    def _drop_stale_connections(self) -> None:
+        """Havuzdaki TCP bağlantılarını atar ki sonraki çağrı yeni bir bağlantı açsın.
+
+        httplib2 her host için bir bağlantıyı önbellekte tutar ve bir yazım EPIPE ile başarısız
+        olduğunda onu KAPATMAZ; yani düz bir yeniden deneme aynı ölü soketi yeniden kullanırdı.
+        """
+        transport = getattr(self._drive, "_http", None)
+        # google_auth_httplib2.AuthorizedHttp gerçek httplib2.Http'yi .http içinde sarar
+        inner = getattr(transport, "http", transport)
+        connections = getattr(inner, "connections", None)
+        if not connections:
+            return
+        for conn in list(connections.values()):
+            try:
+                conn.close()
+            except Exception:  # noqa: BLE001 - closing a dead socket may fail; ignore
+                pass
+        connections.clear()
+
+    def _retry_drive(self, what: str, call):
+        """Bir Drive çağrısını çalıştırır; havuzdaki bağlantı bayatladıysa bir kez yeniden bağlanır.
+
+        Yalnızca bağlantı düzeyindeki hatalar yeniden denenir; bir HTTP hatası (404, 403, kota)
+        Google'dan gelen gerçek bir cevaptır ve değişmeden yüzeye çıkmalıdır. Buradaki iki çağrı için
+        de yeniden denemek güvenli: indirme bir okuma, yükleme ise bu süreç sheet kilidini tutarken
+        çalışma kitabının tamamını aynı baytlarla değiştirir.
+        """
+        for attempt in range(1, _DRIVE_ATTEMPTS + 1):
+            try:
+                return call()
+            except _STALE_CONN_ERRORS as exc:
+                if attempt == _DRIVE_ATTEMPTS:
+                    raise
+                logger.warning(
+                    "Drive %s failed (%s: %s); reconnecting, attempt %d/%d",
+                    what,
+                    type(exc).__name__,
+                    exc,
+                    attempt + 1,
+                    _DRIVE_ATTEMPTS,
+                )
+                self._drop_stale_connections()
+                time.sleep(_DRIVE_RETRY_SLEEP * attempt)
+
     def _download_bytes(self) -> bytes:
-        request = self._drive.files().get_media(fileId=self._file_id)
-        buf = io.BytesIO()
-        downloader = MediaIoBaseDownload(buf, request)
-        done = False
-        while not done:
-            _, done = downloader.next_chunk()
-        buf.seek(0)
-        return buf.read()
+        def once() -> bytes:
+            # Her denemede yeniden kurulur: başarısız denemeden kalan yarı dolu bir tampon, yeniden
+            # denemenin baytlarının önüne eklenmemeli.
+            request = self._drive.files().get_media(fileId=self._file_id)
+            buf = io.BytesIO()
+            downloader = MediaIoBaseDownload(buf, request)
+            done = False
+            while not done:
+                _, done = downloader.next_chunk()
+            buf.seek(0)
+            return buf.read()
+
+        return self._retry_drive("download", once)
 
     def _load_workbook(self):
         data = self._download_bytes()
@@ -232,15 +313,25 @@ class SheetsClient:
 
     def _upload(self, wb) -> None:
         buf = io.BytesIO()
-        wb.save(buf)
-        buf.seek(0)
-        media = MediaIoBaseUpload(buf, mimetype=XLSX_MIME, resumable=True)
-        self._drive.files().update(fileId=self._file_id, media_body=media).execute()
+        wb.save(buf)  # bir kez serileştir; yalnızca aktarım yeniden denenir
+        data = buf.getvalue()
+
+        def once() -> None:
+            # Her denemede yeni bir akış + medya nesnesi: MediaIoBaseUpload kendi okuma konumunu tutar,
+            # yani onu yeniden kullanmak kesilmiş bir çalışma kitabı yüklerdi.
+            media = MediaIoBaseUpload(
+                io.BytesIO(data), mimetype=XLSX_MIME, resumable=True
+            )
+            self._drive.files().update(
+                fileId=self._file_id, media_body=media
+            ).execute()
+
+        self._retry_drive("upload", once)
 
     # --- Public API (same surface as before) -------------------------------------
 
     def get_rows(self) -> list[Row]:
-        """Return all non-empty data rows (from sheet row 2 onward)."""
+        """Boş olmayan bütün veri satırlarını döndürür (sheet'in 2. satırından itibaren)."""
         _, ws = self._load_workbook()
         rows: list[Row] = []
         for r in range(2, ws.max_row + 1):
@@ -261,21 +352,21 @@ class SheetsClient:
         if not val:
             return None
         try:
-            return int(float(val))  # tolerates "200" and "200.0"
+            return int(float(val))  # "200" ve "200.0" değerlerini tolere eder
         except ValueError:
             return None
 
     def next_cv_number(self, rows: list[Row]) -> int:
-        """Highest numeric value in column N (CV No) + 1, minimum 1."""
+        """N sütunundaki (CV No) en yüksek sayısal değer + 1, en az 1."""
         nums = [n for r in rows if (n := self._as_int(r.cv_no)) is not None]
         return (max(nums) + 1) if nums else 1
 
     @_locked
     def write_cv_number(self, row_number: int, cv_no: int) -> None:
-        """Re-download the latest file, set N{row}, and re-upload.
+        """En son dosyayı yeniden indirir, N{row}'u ayarlar ve yeniden yükler.
 
-        Downloading fresh right before writing keeps the clobber window tiny so
-        we don't overwrite edits you made elsewhere in the file.
+        Yazmadan hemen önce taze indirmek üzerine yazma penceresini çok küçük tutar; böylece
+        dosyanın başka yerinde yaptığın düzenlemeleri ezmeyiz.
         """
         wb, ws = self._load_workbook()
         ws.cell(row=row_number, column=CV_NO_COL_INDEX).value = cv_no
@@ -284,7 +375,7 @@ class SheetsClient:
 
     @_locked
     def write_match_rate(self, row_number: int, match_rate: float) -> None:
-        """Write the post-optimization ATS Match Rate to column P."""
+        """Optimizasyon sonrası ATS Eşleşme Oranını P sütununa yazar."""
         wb, ws = self._load_workbook()
         ws.cell(row=row_number, column=MATCH_RATE_COL_INDEX).value = match_rate
         _apply_dropdowns(ws)
@@ -294,11 +385,11 @@ class SheetsClient:
     def write_cv_and_match(
         self, row_number: int, cv_no: int, match_rate: float | None = None
     ) -> None:
-        """Write CV No (N) and, if available, Match Rate (P) in a single upload.
+        """CV No'yu (N) ve varsa Eşleşme Oranını (P) tek bir yüklemede yazar.
 
-        Doing both in one download-edit-upload minimizes how often (and how long) the
-        file is replaced, reducing the chance of clobbering edits you make in the
-        browser at the same time.
+        İkisini tek bir indir-düzenle-yükle döngüsünde yapmak dosyanın ne sıklıkla (ve ne kadar
+        süre) değiştirildiğini en aza indirir; aynı anda tarayıcıda yaptığın düzenlemeleri ezme
+        olasılığını azaltır.
         """
         wb, ws = self._load_workbook()
         ws.cell(row=row_number, column=CV_NO_COL_INDEX).value = cv_no
@@ -314,7 +405,7 @@ class SheetsClient:
         return COLUMNS.index(letter) + 1
 
     def _last_data_row(self, ws) -> int:
-        """Highest row that has data in any key column (A/J/K/L/N)."""
+        """Herhangi bir anahtar sütunda (A/J/K/L/N) veri olan en yüksek satır."""
         key_cols = [self._col(c) for c in ("A", "J", "K", "L", "N")]
         last = 1
         for r in range(2, ws.max_row + 1):
@@ -322,8 +413,58 @@ class SheetsClient:
                 last = r
         return last
 
+    def _style_reference_row(self, ws, before: int) -> int | None:
+        """Yeni satırların biçim kaynağı: tablonun "normal" son satırı.
+
+        Normal = gerçek bir tarihi (E) ve sayısal bir CV No'su (N) olan en yakın satır. Boş
+        şablon satırları (altta, 770-780 gibi) bilerek seçilmez: onların E'si düz metin, J/K'sı
+        boş, yani gerçek bir satırın biçimini taşımazlar. Biçimi sabit sayılarla yazmak yerine
+        buradan kopyalarız; böylece tablonun kendi ayrıntıları (B 7pt, C 9pt, Q 7pt, E'nin
+        dd.MM.yyyy formatı...) kullanıcı değiştirdikçe kendiliğinden izlenir.
+        """
+        for rr in range(min(before, ws.max_row), 1, -1):
+            if (
+                isinstance(ws.cell(row=rr, column=self._col("E")).value, datetime.datetime)
+                and self._as_int(_cell_to_str(ws.cell(row=rr, column=CV_NO_COL_INDEX).value))
+                is not None
+            ):
+                return rr
+        return None
+
+    def _copy_row_style(self, ws, src_row: int, dst_row: int) -> None:
+        """A..Q hücrelerinin stilini src_row'dan dst_row'a kopyalar (değerlere dokunmaz)."""
+        for col in range(1, len(COLUMNS) + 1):
+            src = ws.cell(row=src_row, column=col)
+            dst = ws.cell(row=dst_row, column=col)
+            dst.font = copy(src.font)
+            dst.alignment = copy(src.alignment)
+            dst.border = copy(src.border)
+            dst.fill = copy(src.fill)
+            dst.number_format = src.number_format
+            dst.protection = copy(src.protection)
+        height = ws.row_dimensions[src_row].height
+        if height:
+            ws.row_dimensions[dst_row].height = height
+
+    def _format_new_row(self, ws, row: int, ref_row: int | None) -> None:
+        """Yeni (ya da bozuk biçimli) bir satıra tablonun asıl biçimini verir.
+
+        Köprü olmayan J düz kalır: referans satırın J'si mavi altı çizili bir köprüdür ama yeni
+        satırda şirket sayfasının URL'si henüz yok (panel bilmiyor); URL, CV üretilirken
+        _fill_page_fields'te gelir ve o zaman _link_font uygulanır. Köprü gibi görünen ama
+        tıklanmayan bir hücre yanıltıcı olurdu.
+        """
+        if ref_row is not None:
+            self._copy_row_style(ws, ref_row, row)
+        e_cell = ws.cell(row=row, column=self._col("E"))
+        if e_cell.number_format == "General":
+            e_cell.number_format = DATE_FORMAT
+        j_cell = ws.cell(row=row, column=self._col("J"))
+        if not j_cell.hyperlink:
+            j_cell.font = Font(name=j_cell.font.name, size=j_cell.font.sz or 10)
+
     def _set_link_cell(self, cell, url: str) -> None:
-        """Write a clickable hyperlink cell (blue, underlined)."""
+        """Tıklanabilir bir köprü hücresi yazar (mavi, altı çizili)."""
         cell.value = url
         if url:
             cell.hyperlink = url
@@ -331,24 +472,24 @@ class SheetsClient:
 
     @_locked
     def append_job_rows(self, jobs: list[dict], cv_no_marker: str | None = None) -> list[int]:
-        """Append rows for new jobs — writes K (link) + E (date) + A (No) + I + M.
+        """Yeni ilanlar için satır ekler — K (link) + E (tarih) + A (No) + I + M yazar.
 
-        Each job dict needs at least {"url": ...}. It MAY also carry Huntr-sourced
-        info ("company"/"title"/"city") which is written to J/L/F right away — used by
-        the info-only (CV_GENERATION off) path so the sheet is filled straight from
-        Huntr instead of re-scraping the (often expired) job page. When cv_no_marker is
-        given it is written to N (CV No) so the row counts as handled with no CV.
+        Her ilan sözlüğünde en az {"url": ...} olmalı. Huntr kaynaklı bilgi de ("company"/"title"/
+        "city") TAŞIYABİLİR; bu hemen J/L/F'ye yazılır — info-only (CV_GENERATION kapalı) yolu
+        bunu kullanır, böylece sheet (çoğu zaman süresi geçmiş) ilan sayfasını yeniden okumak
+        yerine doğrudan Huntr'dan doldurulur. cv_no_marker verilirse N'ye (CV No) yazılır, böylece
+        satır CV'siz işlenmiş sayılır.
 
-        In CV-generation mode the caller passes url-only dicts and no marker, so the
-        remaining columns (C/F/H/J/L) are filled later by write_processed_row from the
-        scraped page — exactly as before. Single download-edit-upload.
+        CV üretim modunda çağıran yalnızca url içeren sözlükler geçirir ve işaretçi vermez; kalan
+        sütunlar (C/F/H/J/L) daha sonra okunan sayfadan write_processed_row ile doldurulur — eskisi
+        gibi. Tek indir-düzenle-yükle.
         """
         if not jobs:
             return []
         wb, ws = self._load_workbook()
         last = self._last_data_row(ws)
-        date_fmt = ws.cell(row=last, column=self._col("E")).number_format if last >= 2 else None
-        # Continue the "No" (A) numbering from the most recent numeric value above.
+        ref_row = self._style_reference_row(ws, last)
+        # "No" (A) numaralandırmasını yukarıdaki en son sayısal değerden sürdür.
         last_a = None
         for rr in range(last, 1, -1):
             v = self._as_int(_cell_to_str(ws.cell(row=rr, column=self._col("A")).value))
@@ -363,18 +504,19 @@ class SheetsClient:
             if last_a is not None:
                 last_a += 1
                 ws.cell(row=r, column=self._col("A")).value = last_a
+            # Önce biçim, sonra değer: _format_new_row stili kopyalar, aşağıdaki yazımlar
+            # (tarih, link köprüsü) değerleri doldurur.
+            self._format_new_row(ws, r, ref_row)
             e_cell = ws.cell(row=r, column=self._col("E"))
             e_cell.value = today
-            if date_fmt:
-                e_cell.number_format = date_fmt
             ws.cell(row=r, column=self._col("I")).value = "İş"
             self._set_link_cell(ws.cell(row=r, column=self._col("K")), job.get("url", ""))
-            # İlan No formula: extract the id between "/jobs/view/" and the next "/".
+            # İlan No formülü: "/jobs/view/" ile sonraki "/" arasındaki no'yu çıkarır.
             ws.cell(row=r, column=self._col("M")).value = (
                 f'=IFERROR(MID(K{r},FIND("/jobs/view/",K{r})+11,'
                 f'FIND("/",K{r}&"/",FIND("/jobs/view/",K{r})+11)-FIND("/jobs/view/",K{r})-11),"")'
             )
-            # Optional Huntr-sourced info (info-only path); only set when provided.
+            # İsteğe bağlı Huntr kaynaklı bilgi (info-only yolu); yalnızca verildiyse yazılır.
             if job.get("company"):
                 ws.cell(row=r, column=self._col("J")).value = job["company"]
             if job.get("title"):
@@ -391,8 +533,9 @@ class SheetsClient:
         return written
 
     def _fill_page_fields(self, ws, row_number: int, fields: dict) -> None:
-        """Fill ONLY-EMPTY C/F/H/J/L from the scraped page (J as a company hyperlink).
-        G is never touched (filled manually). Does not upload."""
+        """YALNIZCA BOŞ olan C/F/H/J/L'yi okunan sayfadan doldurur (J şirket köprüsü olarak).
+        G'ye asla dokunulmaz (elle doldurulur). Yükleme yapmaz.
+        """
 
         def fill(col: str, val: str):
             if not val:
@@ -405,23 +548,23 @@ class SheetsClient:
 
         fill("C", fields.get("C", ""))   # Easy Apply (only set for non-LinkedIn = "Yok")
         fill("F", fields.get("F", ""))   # city
-        fill("H", fields.get("H", ""))   # employment type
+        fill("H", fields.get("H", ""))   # istihdam türü
         fill("L", fields.get("L", ""))   # title
-        fill("J", fields.get("J", ""))   # company
+        fill("J", fields.get("J", ""))   # şirket
 
-        # The company HYPERLINK is applied whenever the scrape found one and the cell
-        # doesn't already have one — deliberately NOT gated on us having just written the
-        # text. The panel's "Ekle" button fills J at append time (plain text, it has no
-        # company URL), so an only-empty rule would leave the name un-clickable forever:
-        # by the time the scrape returns company_url the cell is no longer empty.
+        # Şirket KÖPRÜSÜ, scrape bir tane bulduğunda ve hücrede zaten yoksa uygulanır — metni az önce
+        # bizim yazmış olmamıza bilerek BAĞLANMAZ. Panelin "Ekle" butonu J'yi satır eklerken doldurur
+        # (düz metin, şirket URL'si yok); yani yalnızca-boşsa kuralı adı sonsuza kadar tıklanamaz
+        # bırakırdı: scrape company_url'yi döndürdüğünde hücre artık boş değildir.
         j_cell = ws.cell(row=row_number, column=self._col("J"))
         if fields.get("J_url") and not j_cell.hyperlink and _cell_to_str(j_cell.value).strip():
             j_cell.hyperlink = fields["J_url"]
             j_cell.font = _link_font(j_cell)
 
     def _set_languages_cell(self, cell, languages: str) -> None:
-        """Write the job's priority languages ("Python, Java") to Q at 7pt.
-        Only sets a value when non-empty (an empty posting-language stays blank)."""
+        """İlanın öncelikli dillerini ("Python, Java") Q'ya 7pt olarak yazar.
+        Yalnızca boş değilse değer yazar (ilan dili yoksa hücre boş kalır).
+        """
         if not languages:
             return
         cell.value = languages
@@ -436,9 +579,10 @@ class SheetsClient:
         match_rate: float | None = None,
         languages: str = "",
     ) -> None:
-        """Fill ONLY-EMPTY C/F/H/J/L from the scraped page (J as a company hyperlink),
-        plus N (CV No), P (Match Rate) and Q (priority programming languages, 7pt).
-        G is never touched (filled manually). Single download-edit-upload."""
+        """YALNIZCA BOŞ olan C/F/H/J/L'yi okunan sayfadan doldurur (J şirket köprüsü olarak), artı
+        N (CV No), P (Eşleşme Oranı) ve Q (öncelikli programlama dilleri, 7pt). G'ye asla
+        dokunulmaz (elle doldurulur). Tek indir-düzenle-yükle.
+        """
         wb, ws = self._load_workbook()
         self._fill_page_fields(ws, row_number, fields)
         ws.cell(row=row_number, column=CV_NO_COL_INDEX).value = cv_no
@@ -452,11 +596,38 @@ class SheetsClient:
 
     @_locked
     def write_info_only_row(self, row_number: int, fields: dict, cv_no_marker: str) -> None:
-        """CV-generation-OFF path: fill ONLY-EMPTY C/F/H/J/L from the scraped page and
-        write a non-numeric marker (e.g. "Yok") to N so the row counts as handled but is
-        never assigned a CV. No Match Rate is written. Single download-edit-upload."""
+        """CV üretimi KAPALI yolu: YALNIZCA BOŞ olan C/F/H/J/L'yi okunan sayfadan doldurur ve N'ye
+        sayısal olmayan bir işaretçi (ör. "Yok") yazar; satır işlenmiş sayılır ama ona asla CV
+        atanmaz. Eşleşme Oranı yazılmaz. Tek indir-düzenle-yükle.
+        """
         wb, ws = self._load_workbook()
         self._fill_page_fields(ws, row_number, fields)
         ws.cell(row=row_number, column=CV_NO_COL_INDEX).value = cv_no_marker
         _apply_dropdowns(ws)
         self._upload(wb)
+
+    @_locked
+    def reformat_rows(self, row_numbers: list[int]) -> list[int]:
+        """Biçimi bozuk yazılmış satırları tablonun asıl biçimine döndürür; değerlere dokunmaz.
+
+        Tek seferlik onarım içindir (eski append_job_rows satırlara stil vermiyordu). E'de
+        "General" biçimiyle takılı kalmış bir seri numarası (46318) gerçek tarihe çevrilir.
+        Yalnızca biçimi onarılan satır numaralarını döndürür. Tek indir-düzenle-yükle.
+        """
+        wb, ws = self._load_workbook()
+        ref_row = self._style_reference_row(ws, min(row_numbers) - 1)
+        if ref_row is None:
+            return []
+        fixed = []
+        for r in row_numbers:
+            e_cell = ws.cell(row=r, column=self._col("E"))
+            serial = e_cell.value if isinstance(e_cell.value, (int, float)) else None
+            self._format_new_row(ws, r, ref_row)
+            if serial:
+                # Excel seri numarası -> tarih (1899-12-30 tabanı, openpyxl ile aynı)
+                e_cell.value = datetime.datetime(1899, 12, 30) + datetime.timedelta(days=serial)
+            e_cell.number_format = DATE_FORMAT
+            fixed.append(r)
+        _apply_dropdowns(ws)
+        self._upload(wb)
+        return fixed

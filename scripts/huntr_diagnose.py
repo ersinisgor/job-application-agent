@@ -1,13 +1,13 @@
-"""Diagnose how each Huntr board job will be handled. Read-only (changes nothing).
+"""Her Huntr board ilanının nasıl işleneceğini teşhis eder. Salt okuma (hiçbir şey değiştirmez).
 
-IMPORTANT: stop the running agent first (Ctrl-C in its terminal), because it uses the
-same Chrome profile — two browsers on one profile conflict.
+ÖNEMLİ: önce çalışan poller'ı durdur (terminalinde Ctrl-C), çünkü aynı Chrome profilini
+kullanıyor — bir profilde iki tarayıcı çakışır.
 
-For every board job it shows: its job id (column M), whether it is newly-seen, whether
-it is already in the sheet, and the resulting decision (import / duplicate-alert /
-already-handled). Useful when a job you added to Huntr did not turn into a CV.
+Board'daki her ilan için gösterir: ilan no'su (M sütunu), yeni görülüp görülmediği, zaten
+sheet'te olup olmadığı ve ortaya çıkan karar (aktar / tekrar-uyarısı / zaten-işlendi).
+Huntr'a eklediğin bir ilan CV'ye dönüşmediğinde işe yarar.
 
-Usage:
+Kullanım:
     ./.venv/bin/python scripts/huntr_diagnose.py
 """
 from __future__ import annotations
@@ -31,8 +31,8 @@ def main() -> None:
     seen = load_huntr_seen()
     print(f"\nSEEN baseline: {'<none — next run will baseline>' if seen is None else f'{len(seen)} job key(s)'}")
 
-    # The board JSON sometimes fails to load in one shot (or the running agent is using
-    # the same Chrome profile) -> 0 jobs. Retry a few times before giving up.
+    # Board JSON'u bazen tek seferde yüklenmiyor (ya da çalışan poller aynı Chrome profilini
+    # kullanıyor) -> 0 ilan. Vazgeçmeden önce birkaç kez yeniden dene.
     jobs: list[dict] = []
     for attempt in range(1, 4):
         jobs = HuntrClient(headless=True).fetch_jobs()

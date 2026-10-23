@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "cv-tools": {
+      "type": "stdio",
+      "command": "./.venv/bin/python",
+      "args": ["-m", "src.applyjobs.mcp_server"]
+    }
+  }
+}

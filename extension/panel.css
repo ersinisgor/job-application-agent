@@ -1,4 +1,4 @@
-/* Fixed, scrollable summary panel at the top-right — a readable card over LinkedIn. */
+/* Sağ üstte sabit, kaydırılabilir özet paneli — LinkedIn'in üzerinde okunaklı bir kart. */
 
 #jobsum-panel {
   position: fixed;
@@ -13,7 +13,7 @@
   border: 1px solid #d0d7de;
   border-radius: 10px;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.18);
-  z-index: 2147483000; /* stay above LinkedIn */
+  z-index: 2147483000; /* LinkedIn'in üstünde kal */
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
     sans-serif;
@@ -26,30 +26,30 @@
   display: none;
 }
 
-/* Action buttons on their own top row; the heading below gets the full width. */
+/* Eylem butonları kendi üst satırında; alttaki başlık tam genişliği alır. */
 #jobsum-header {
   display: flex;
   flex-direction: column;
   align-items: stretch;
   padding: 8px 14px 10px;
-  background: #0a66c2; /* LinkedIn blue */
+  background: #0a66c2; /* LinkedIn mavisi */
   color: #ffffff;
   flex: 0 0 auto;
 }
 
-/* Position title on top, company underneath — like LinkedIn's top card. */
+/* Pozisyon başlığı üstte, şirket altında — LinkedIn'in üst kartı gibi. */
 #jobsum-heading {
   display: flex;
   flex-direction: column;
   flex: 1 1 auto;
-  min-width: 0; /* allow text truncation inside flex */
+  min-width: 0; /* flex içinde metin kırpmaya izin ver */
 }
 
 #jobsum-title {
   font-weight: 600;
   overflow: hidden;
   display: -webkit-box;
-  -webkit-line-clamp: 2; /* long titles: max 2 lines */
+  -webkit-line-clamp: 2; /* uzun başlıklar: en fazla 2 satır */
   -webkit-box-orient: vertical;
 }
 
@@ -68,7 +68,7 @@
 }
 
 #jobsum-close {
-  margin-left: auto; /* the other buttons sit left; only "×" hugs the corner */
+  margin-left: auto; /* diğer butonlar solda durur; yalnızca "×" köşeye yaslanır */
   background: transparent;
   border: none;
   color: #ffffff;
@@ -92,8 +92,8 @@
   color: #57606a;
 }
 
-/* Spinner shown while a summary is being fetched, so a slow model call reads as
-   "working", not "nothing happened / errored". */
+/* Özet getirilirken gösterilen dönen simge; yavaş bir model çağrısı "hiçbir şey olmadı / hata
+   verdi" değil, "çalışıyor" diye okunsun. */
 .jobsum-loading {
   display: flex;
   align-items: center;
@@ -161,18 +161,18 @@
   font-size: 12px;
 }
 
-/* Stack rows. A "veya" row lists options the posting accepts interchangeably; the last
-   row holds the plain requirements, wrapping at the panel's width. The "veya" label is
-   a fixed column so a wrapped option lines up under its siblings instead of looking
-   like a separate requirement. Green = the candidate has it, red = missing. */
+/* Stack satırları. Bir "veya" satırı ilanın birbirinin yerine kabul ettiği seçenekleri listeler;
+   son satır düz gereksinimleri tutar ve panel genişliğinde kayar. "veya" etiketi sabit bir
+   sütundur, böylece alt satıra kayan bir seçenek ayrı bir gereksinim gibi görünmek yerine
+   kardeşlerinin altına hizalanır. Yeşil = adayda var, kırmızı = eksik. */
 .jobsum-stack-row {
   display: flex;
   align-items: baseline;
 }
 
-/* A faint grey band ties the "veya" label and its interchangeable options together into
-   one visible unit. Deliberately neutral: the chips inside carry the only colour that
-   means anything (green = known, red = missing), and a tinted band muddied them. */
+/* Soluk gri bir şerit, "veya" etiketini ve birbirinin yerine geçen seçeneklerini tek görünür bir
+   birime bağlar. Bilerek nötr: anlam taşıyan tek renk içerideki çiplerde (yeşil = biliniyor,
+   kırmızı = eksik) ve renkli bir şerit onları bulandırıyordu. */
 .jobsum-stack-row--alt {
   background: #f4f6f7;
   border-radius: 8px;
@@ -204,14 +204,14 @@
   color: #a40e26;
 }
 
-/* Fit badge: prominent top block, color-banded by score. */
+/* Uyum rozeti: belirgin üst blok, puana göre renk bantlı. */
 .jobsum-fit {
   padding: 10px 0 12px;
   margin-bottom: 4px;
   border-bottom: 1px solid #eaeef2;
   border-left: 4px solid transparent;
   padding-left: 10px;
-  margin-left: -14px; /* bleed the color bar to the panel edge */
+  margin-left: -14px; /* renk çubuğunu panel kenarına taşır */
 }
 
 .jobsum-fit-body {
@@ -251,7 +251,7 @@
   color: #b42318;
 }
 
-/* Review status block (under the header): banner + mark/unmark toggle. */
+/* İnceleme durumu bloğu (başlığın altında): bant + işaretle/kaldır düğmesi. */
 #jobsum-review:empty {
   display: none;
 }
@@ -276,8 +276,8 @@
   font-weight: 600;
 }
 
-/* Draw the eye to the "already reviewed" warning: the ⚠ pulses (scales up and
-   back) three times each time a reviewed job's banner is rendered. */
+/* Gözü "zaten incelendi" uyarısına çek: incelenmiş bir ilanın bandı her çizildiğinde ⚠ üç kez
+   atar (büyüyüp geri döner). */
 .jobsum-warn-icon {
   display: inline-block;
   transform-origin: center;
@@ -303,7 +303,7 @@
 .jobsum-review-btn {
   background: transparent;
   border: 1px solid #1a7f37;
-  color: #1a7f37; /* green "mark reviewed" — deliberately not LinkedIn blue */
+  color: #1a7f37; /* yeşil "incelendi olarak işaretle" — bilerek LinkedIn mavisi değil */
   border-radius: 12px;
   padding: 2px 10px;
   font-size: 12px;
@@ -315,8 +315,8 @@
   background: #e6f4ea;
 }
 
-/* Selected state for the plain (green) pill — used by the cover letter's EN/TR picker.
-   The --maybe variant defines its own; the base one had none until now. */
+/* Düz (yeşil) hap için seçili durum — mektubun EN/TR seçicisi kullanır. --maybe varyantı
+   kendisininkini tanımlar; temel olanın şimdiye kadar yoktu. */
 .jobsum-review-btn.is-active {
   background: #1a7f37;
   color: #ffffff;
@@ -328,15 +328,15 @@
 
 .jobsum-review-btn--undo {
   border-color: #8b949e;
-  color: #57606a; /* neutral gray for the undo action */
+  color: #57606a; /* geri al eylemi için nötr gri */
 }
 
 .jobsum-review-btn--undo:hover {
   background: #f3f4f6;
 }
 
-/* "Olabilir" shortlist toggle — violet, distinct from the green reviewed action;
-   fills in when the job is on the shortlist. */
+/* "Olabilir" kısa liste düğmesi — mor, yeşil incelendi eyleminden ayrı; ilan kısa listedeyse
+   dolu görünür. */
 .jobsum-review-btn--maybe {
   border-color: #8250df;
   color: #8250df;
@@ -355,28 +355,14 @@
   background: #6f42c1;
 }
 
-/* Reviewed job cards in the list: dimmed + a small badge. */
-.jobsum-seen {
-  opacity: 0.55;
-  position: relative;
-}
+/* Listedeki incelenmiş ilan kartları: soluk + küçük bir rozet. */
+/* İncelenmiş liste kartları (.jobsum-seen / .jobsum-seen-badge) content.js'ten SATIR İÇİ
+   stillenir — bu stil sayfası LinkedIn'in kartları çizdiği shadow root'lara ulaşmaz ve tek bir
+   sınıf LinkedIn'in kendi kurallarına yenilir. Sınıflar yalnızca durum işareti olarak kalır; bu
+   yüzden burada bilerek onlar için kural yok. */
 
-.jobsum-seen-badge {
-  position: absolute;
-  top: 4px;
-  right: 4px;
-  z-index: 5;
-  background: #eef3f8;
-  color: #57606a;
-  border-radius: 10px;
-  padding: 1px 7px;
-  font-size: 10px;
-  font-weight: 600;
-  pointer-events: none;
-}
-
-/* Header actions: five buttons plus the close button. Wrap rather than squeeze — the
-   panel is 340px wide and the Turkish labels are long. */
+/* Başlık eylemleri: beş buton artı kapatma butonu. Sıkıştırmak yerine alt satıra kaydır —
+   panel 340px genişliğinde ve Türkçe etiketler uzun. */
 #jobsum-actions {
   display: flex;
   align-items: center;
@@ -411,7 +397,7 @@
   background: rgba(255, 255, 255, 0.18);
 }
 
-/* Already in the sheet: filled, so the state reads at a glance. */
+/* Zaten sheet'te: dolu, durum tek bakışta okunsun. */
 #jobsum-add.is-active {
   background: rgba(255, 255, 255, 0.3);
   border-color: rgba(255, 255, 255, 0.85);
@@ -422,7 +408,7 @@
   cursor: default;
 }
 
-/* Reviewed-jobs list view (shown in the body when "Liste" is active). */
+/* İncelenen ilanlar liste görünümü ("Liste" etkinken gövdede gösterilir). */
 .jobsum-listhead {
   font-size: 11px;
   text-transform: uppercase;
@@ -486,7 +472,7 @@
   color: #b42318;
 }
 
-/* Dark theme support (LinkedIn dark mode) */
+/* Koyu tema desteği (LinkedIn koyu modu) */
 @media (prefers-color-scheme: dark) {
   #jobsum-panel {
     background: #1d2226;
@@ -586,10 +572,6 @@
   .jobsum-review-btn--maybe.is-active:hover {
     background: #a371f7;
   }
-  .jobsum-seen-badge {
-    background: #29343d;
-    color: #a9b0b8;
-  }
   .jobsum-listitem {
     border-bottom-color: #38434f;
   }
@@ -602,7 +584,7 @@
   }
 }
 
-/* --- Cover letter view (body, when "Mektup" is active) -------------------- */
+/* --- Mektup görünümü ("Mektup" etkinken gövde) -------------------- */
 
 .jobsum-cover-actions {
   display: flex;
@@ -617,21 +599,21 @@
   margin-bottom: 6px;
 }
 
-/* The letter is meant to be read and copied, so keep the model's line breaks and
-   let the user select the text by hand if they'd rather not use "Kopyala". */
+/* Mektup okunmak ve kopyalanmak için; bu yüzden modelin satır sonlarını koru ve kullanıcı
+   "Kopyala"yı kullanmak istemezse metni elle seçebilsin. */
 .jobsum-cover-text {
   white-space: pre-wrap;
   user-select: text;
   font-size: 12px;
   line-height: 1.5;
-  color: #1f2328; /* same as .jobsum-value — dark override is at the end of the file */
+  color: #1f2328; /* ".jobsum-value" ile aynı — koyu tema geçersiz kılması dosyanın sonunda */
   max-height: 60vh;
   overflow-y: auto;
 }
 
-/* This block MUST stay after the cover-letter rules above, not inside the main
-   dark-mode section higher up: a media query adds no specificity, so the later
-   .jobsum-cover-text rule would win and the letter would stay dark-on-dark. */
+/* Bu blok yukarıdaki mektup kurallarından SONRA kalmalı, daha yukarıdaki ana koyu mod bölümünün
+   içinde değil: bir media query özgüllük eklemez; yani sonraki .jobsum-cover-text kuralı kazanır
+   ve mektup koyu üstüne koyu kalırdı. */
 @media (prefers-color-scheme: dark) {
   .jobsum-cover-text {
     color: #e8e6e3;
