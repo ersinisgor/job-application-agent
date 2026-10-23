@@ -41,6 +41,7 @@ from .config import (
     NO_CV_MARKER,
     PROJECTS_LIST_FILE,
     SUMMARY_CACHE_FILE,
+    SUMMARY_PROMPT_FILE,
     settings,
 )
 from .sheets import Row, SheetLockTimeout, SheetsClient
@@ -73,83 +74,24 @@ _PROJECTS_TEXT = _read_profile_file(PROJECTS_LIST_FILE, "Projects")
 if not _CV_TEXT and not _PROJECTS_TEXT:
     logger.warning("No CV or projects profile loaded; fit scoring disabled.")
 
-# The system prompt is in English, but it instructs the model to write the field
-# VALUES in Turkish so the panel reads as a quick Turkish summary.
-SYSTEM_PROMPT = (
-    "You are a technical recruiting assistant. The user wants an AT-A-GLANCE summary "
-    "to decide in seconds whether a job posting fits them. Be TERSE. Rules:\n"
-    "- Write free-text VALUES in TURKISH; keep technology names as-is (Python, Docker).\n"
-    "- Only use information EXPLICITLY stated in the posting; if missing, leave the "
-    "field empty (\"\" or []). Never invent or guess.\n"
-    "- The text may include page clutter (navigation, other job titles). Focus on the "
-    "posting itself; take 'job_title' and 'company' from the posting.\n"
-    "- 'role_summary': one or two short sentences — what the candidate will build/do "
-    "and the key context that matters. No company history, no boilerplate.\n"
-    "- 'stack': the REQUIRED technologies only, max 10 GROUPS, most important first "
-    "(languages before frameworks/tools). Skip nice-to-haves. A group is an ARRAY, and "
-    "it holds MORE THAN ONE option only when the posting itself offers a CHOICE between "
-    "them ('or', 'veya', 'ya da', 'or similar', 'en az birinde'). MOST REQUIREMENTS ARE "
-    "NOT A CHOICE — default to one-element groups:\n"
-    "  * a technology required on its own is a one-element group: [\"Docker\"]\n"
-    "  * 'Proficient in one or more back end languages — Python, Go, Java, Node.js, "
-    "Rust, or similar' is ONE group: [\"Python\", \"Go\", \"Java\", \"Node.js\", \"Rust\"]\n"
-    "  * when the posting couples a language with its framework, keep the pair inside a "
-    "single option string, so 'Java/Spring Boot or C#/.NET Core' is ONE group: "
-    "[\"Java / Spring Boot\", \"C# / .NET Core\"]\n"
-    "  * 'HTML, CSS ve JavaScript konusunda güçlü deneyim' offers no choice — it is "
-    "THREE one-element groups: [\"HTML\"], [\"CSS\"], [\"JavaScript\"]\n"
-    "  Never merge unrelated required technologies into one group: Docker and "
-    "PostgreSQL, both mandatory, are two separate one-element groups.\n"
-    "- 'stack_known': always []. The server fills it.\n"
-    "- 'work_type': distinguish remote/hybrid/on-site; put any city/country/timezone "
-    "condition in 'work_type_note' (a few words, e.g. 'İstanbul tercihli').\n"
-    "- 'min_experience': a few words (e.g. '3+ yıl'); 'visa_sponsorship': only if the "
-    "posting mentions it.\n"
-    "- 'fit_score' (0-100): how well the posting's REQUIRED TECHNOLOGIES fit the "
-    "CANDIDATE PROFILE given below — compare required languages/frameworks/tools ONLY. "
-    "The candidate KNOWS every technology named ANYWHERE in the profile — both the CV "
-    "and the PAST PROJECTS — so a required technology counts as MET if it appears in "
-    "either (e.g. Next.js used in a past project counts even if the CV omits it). "
-    "Treat obvious spelling variants of a technology as the SAME thing: 'REST API' = "
-    "'RESTful API', 'React' = 'React.js', 'Node' = 'Node.js', 'Vector Database' = "
-    "pgvector / Vector Search, 'MSSQL' = 'SQL Server' — a variant in the profile means "
-    "the requirement is met. "
-    "A multi-option 'stack' group is a choice, so it counts as fully MET as soon as the "
-    "candidate knows ANY ONE of its options. "
-    "IGNORE experience and seniority ENTIRELY: do NOT lower the score for a senior/lead "
-    "title or a years-of-experience requirement, and do NOT raise it for a junior one — "
-    "the years asked for and the candidate's years must not affect the number at all. "
-    "Bands: 70-100 strong (stack overlaps well), 40-69 partial (some overlap), 1-39 weak "
-    "(little overlap). If no candidate profile is given, use 0.\n"
-    "- 'fit_reason': ONE very short Turkish clause about STACK overlap only; never "
-    "mention experience or seniority. Before writing it, walk the 'stack' items ONE BY "
-    "ONE and search the whole CANDIDATE PROFILE (CV *and* past projects) for each: an "
-    "item is MISSING only if it appears NOWHERE there. Never call an item missing when "
-    "the profile names it — the profile's skill lists and project tech lists count.\n"
-    "  * fit_score 70+: name the required technologies that match, then any missing one "
-    "(e.g. 'Node.js, NestJS ve TypeScript uyumlu; AWS deneyimi yok.').\n"
-    "  * fit_score below 70: write a SINGLE clause naming the MISSING technologies and "
-    "nothing else — no ';', no second clause, no word about what the candidate does know "
-    "or what their stack is built on. Examples of the ONLY acceptable shape: 'Java, "
-    "Spring Boot, Kafka, Redis ve Kubernetes deneyimi yok.' / 'Python ve Django/FastAPI "
-    "eksik.'\n"
-    "  * fit_score 0: empty."
-)
+# Sistem prompt'u Türkçe bir dosyada (prompts/ozet_sistem.md); model alan DEĞERLERİNİ
+# Türkçe yazar ki panel hızlı bir Türkçe özet gibi okunsun. Alan adları (şema) İngilizce.
+SYSTEM_PROMPT = SUMMARY_PROMPT_FILE.read_text(encoding="utf-8").strip()
 
 
 def _profile_block() -> str:
     """The candidate profile (CV + past-project tech) appended to the system prompt."""
     parts: list[str] = []
     if _CV_TEXT:
-        parts.append("CV / RESUME:\n" + _CV_TEXT)
+        parts.append("CV / ÖZGEÇMİŞ:\n" + _CV_TEXT)
     if _PROJECTS_TEXT:
         parts.append(
-            "PAST PROJECTS the candidate has built — treat EVERY technology named here "
-            "as one the candidate KNOWS, even if the CV omits it:\n" + _PROJECTS_TEXT
+            "Adayın yaptığı GEÇMİŞ PROJELER — burada adı geçen HER teknolojiyi, CV'de "
+            "olmasa bile adayın BİLDİĞİ bir teknoloji say:\n" + _PROJECTS_TEXT
         )
     if not parts:
         return ""
-    return "\n\nCANDIDATE PROFILE (score fit_score against this):\n" + "\n\n".join(parts)
+    return "\n\nADAY PROFİLİ (fit_score'u buna göre puanla):\n" + "\n\n".join(parts)
 
 
 # The panel paints the score green at 70+, yellow at 40-69 and red below that
@@ -389,15 +331,15 @@ def _find_job_row(job_id: str) -> Row | None:
 def _build_user_message(req: SummarizeRequest) -> str:
     parts: list[str] = []
     if req.title:
-        parts.append(f"Job title: {req.title}")
+        parts.append(f"İlan başlığı: {req.title}")
     if req.company:
-        parts.append(f"Company: {req.company}")
+        parts.append(f"Şirket: {req.company}")
     if req.location:
-        parts.append(f"Location: {req.location}")
-    parts.append("\nJob posting:\n" + req.text.strip())
+        parts.append(f"Konum: {req.location}")
+    parts.append("\nİş ilanı:\n" + req.text.strip())
     parts.append(
-        "\nAnalyze the posting above and fill the requested fields "
-        "(free-text values in Turkish)."
+        "\nYukarıdaki ilanı analiz et ve istenen alanları doldur "
+        "(serbest metin değerleri Türkçe)."
     )
     return "\n".join(parts)
 
@@ -413,8 +355,8 @@ _SCHEMA_JSON = json.dumps(
 )
 
 _JSON_INSTRUCTION = (
-    "\nRespond with ONLY one JSON object that matches this JSON schema — no "
-    "markdown, no code fences, no commentary:\n" + _SCHEMA_JSON
+    "\nYALNIZCA bu JSON şemasına uyan tek bir JSON nesnesiyle yanıt ver — markdown "
+    "yok, kod bloğu yok, yorum yok:\n" + _SCHEMA_JSON
 )
 
 
@@ -437,7 +379,7 @@ _SUMMARY_CACHE: "OrderedDict[str, JobSummary]" = OrderedDict()
 _CACHE_MAX = 3000
 # Bump whenever the scoring rubric (SYSTEM_PROMPT) or JobSummary schema changes, so a
 # stale on-disk cache from the old rules is discarded instead of returning old scores.
-_CACHE_VERSION = 11
+_CACHE_VERSION = 12
 
 
 def _load_cache() -> None:

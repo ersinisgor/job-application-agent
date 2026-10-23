@@ -35,31 +35,31 @@ class JobSummary(BaseModel):
     """At-a-glance job summary. Free-text values in Turkish; deliberately terse."""
 
     job_title: str = Field(
-        default="", description="Position title as stated in the posting."
+        default="", description="İlanda yazdığı haliyle pozisyon başlığı."
     )
     company: str = Field(
-        default="", description="Hiring company name as stated in the posting."
+        default="", description="İlanda yazdığı haliyle işe alan şirketin adı."
     )
     role_summary: str = Field(
-        description="1-2 short Turkish sentences: what the candidate will build/do."
+        description="1-2 kısa Türkçe cümle: adayın ne inşa edeceği/ne yapacağı."
     )
     work_type: WorkType = Field(
-        description="Work arrangement: remote, hybrid, on-site, or unspecified."
+        description="Çalışma düzeni: remote, hybrid, on-site ya da unspecified."
     )
     work_type_note: str = Field(
         default="",
-        description="Very short Turkish location/timezone condition, e.g. 'İstanbul tercihli'.",
+        description="Çok kısa Türkçe konum/saat dilimi koşulu, ör. 'İstanbul tercihli'.",
     )
     visa_sponsorship: str = Field(
-        default="", description="Very short Turkish visa/sponsorship note; usually empty."
+        default="", description="Çok kısa Türkçe vize/sponsorluk notu; genellikle boş."
     )
     stack: list[list[str]] = Field(
         default_factory=list,
-        description="Required tech, max 6 groups; an inner list holds 'or' alternatives.",
+        description="Zorunlu teknolojiler, en fazla 6 grup; iç liste 'veya' alternatiflerini tutar.",
     )
     stack_known: list[list[bool]] = Field(
         default_factory=list,
-        description="Server-filled: is each stack option in the candidate profile?",
+        description="Sunucu doldurur: her stack seçeneği aday profilinde var mı?",
     )
 
     @field_validator("stack", mode="before")
@@ -74,14 +74,14 @@ class JobSummary(BaseModel):
             return [[item] if isinstance(item, str) else item for item in value]
         return value
     fit_score: int = Field(
-        default=0, description="0-100 fit vs the candidate profile; 0 if unknown."
+        default=0, description="Aday profiline göre 0-100 uyum; bilinmiyorsa 0."
     )
     fit_reason: str = Field(
         default="",
-        description="One very short Turkish clause: matches if 70+, else only the gaps.",
+        description="Çok kısa tek bir Türkçe yan cümle: 70+ ise uyanlar, değilse yalnızca eksikler.",
     )
     min_experience: str = Field(
-        default="", description="Minimum experience, very short Turkish, e.g. '3+ yıl'."
+        default="", description="Asgari deneyim, çok kısa Türkçe, ör. '3+ yıl'."
     )
 
 

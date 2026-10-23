@@ -18,6 +18,9 @@ load_dotenv(PROJECT_ROOT / ".env")
 # The candidate's facts (CV + projects): the single source of truth every agent reads.
 PROFILE_DIR = PROJECT_ROOT / "profile"
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
+# Doğrudan API ile çağrılan tek model işinin (panel özeti) Türkçe system prompt'u.
+PROMPTS_DIR = PROJECT_ROOT / "prompts"
+SUMMARY_PROMPT_FILE = PROMPTS_DIR / "ozet_sistem.md"
 CREDENTIALS_DIR = PROJECT_ROOT / "credentials"
 STATE_DIR = PROJECT_ROOT / "state"
 # Generated CVs, analyses, job descriptions and cover letters (gitignored).
