@@ -103,6 +103,11 @@ def run_claude(prompt: str, *, model: str, effort: str, timeout: int) -> AgentRe
         "--permission-mode",
         "dontAsk",
         "--no-session-persistence",
+        # Sadece projenin cv-tools sunucusu yüklensin; kullanıcının claude.ai bağlayıcıları
+        # (Drive, Docs…) başsız CV oturumunda gereksiz araç ve bağlam demektir.
+        "--strict-mcp-config",
+        "--mcp-config",
+        str(PROJECT_ROOT / ".mcp.json"),
         "--model",
         model,
         "--disallowedTools",
