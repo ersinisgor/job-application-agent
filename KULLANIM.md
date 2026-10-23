@@ -1,4 +1,4 @@
-# job-apply-agent — Kullanım Kılavuzu
+# Job Application Agent — Kullanım Kılavuzu
 
 Uygulama 7/24 kendi kendine çalışmaz. Drive'daki tabloyu **yalnızca sen terminalden
 başlattığın sürece** izler. Aşağıdaki iki kullanım şeklinden birini seç.
@@ -18,7 +18,7 @@ başlattığın sürece** izler. Aşağıdaki iki kullanım şeklinden birini se
 
 > Her komuttan önce proje klasörüne girmen gerekir:
 > ```bash
-> cd /Users/mac/code/ersinisgor/job-apply-agent
+> cd /Users/mac/code/ersinisgor/job-application-agent
 > ```
 
 ---
@@ -48,7 +48,7 @@ Terminal açık kaldığı sürece her 20 saniyede bir tabloyu kontrol eder. Bu 
 denenmez, kota boşa harcanmasın diye.
 
 ```bash
-cd /Users/mac/code/ersinisgor/job-apply-agent
+cd /Users/mac/code/ersinisgor/job-application-agent
 ./.venv/bin/python -m src.applyjobs.main
 ```
 
@@ -63,13 +63,13 @@ cd /Users/mac/code/ersinisgor/job-apply-agent
 Tabloda başvuracağın satırların **B sütununu `Üretilecek`** yap, kaydet, sonra **bir kez**
 çalıştır; işaretli tüm satırları işleyip kapanır.
 
-**En kolayı — çift tıkla:** Finder'da `job-apply-agent/scripts/cv_uret.command` dosyasına çift
+**En kolayı — çift tıkla:** Finder'da `job-application-agent/scripts/cv_uret.command` dosyasına çift
 tıkla. Terminal açılır, üretimi yapar, `Kapatmak için bir tuşa bas...` der.
 
 Terminalden aynı şey:
 
 ```bash
-cd /Users/mac/code/ersinisgor/job-apply-agent
+cd /Users/mac/code/ersinisgor/job-application-agent
 ./.venv/bin/python scripts/run_once.py
 ```
 
@@ -78,7 +78,7 @@ Sonunda tek satırlık özet gelir: `Scan complete: 3 CV(s) generated, 1 expired
 İşlemeden önce sadece hangi satırların işleneceğini görmek istersen (hiçbir şey yazmaz):
 
 ```bash
-cd /Users/mac/code/ersinisgor/job-apply-agent
+cd /Users/mac/code/ersinisgor/job-application-agent
 ./.venv/bin/python scripts/run_once.py --dry-run
 ```
 
@@ -106,7 +106,7 @@ açıklamasından** yeniden ürettirirsin — LinkedIn'e tekrar gidilmez. Modele
 
 **Tek bir CV'yi (örnek: 309) açıklamayla yeniden oluştur:**
 ```bash
-cd /Users/mac/code/ersinisgor/job-apply-agent
+cd /Users/mac/code/ersinisgor/job-application-agent
 CV_MODEL=claude-opus-5-5 CV_EFFORT=high ./.venv/bin/python scripts/regenerate.py \
   --from 309 --to 309 \
   -i "Remove the Library Management System project and feature a .NET project instead"
@@ -167,7 +167,7 @@ Başlıkta `CV 312 · kayıtlı mektup` ya da `· yeni üretildi` yazar. Buton *
 **Yol 2 — terminalden:**
 
 ```bash
-cd /Users/mac/code/ersinisgor/job-apply-agent
+cd /Users/mac/code/ersinisgor/job-application-agent
 ./.venv/bin/python scripts/cover_letter.py --cv-no 305             # İngilizce, panoya kopyalar
 ./.venv/bin/python scripts/cover_letter.py --cv-no 305 --lang tr   # Türkçe
 ./.venv/bin/python scripts/cover_letter.py --cv-no 305 --force     # yeniden üret, üzerine yaz
@@ -337,7 +337,7 @@ yapman gerekir, ilk çalıştırmada mevcut ilanlar "görüldü" işaretlenir).
 
 - **"command not found: python" benzeri hata:** `python` yerine her zaman `./.venv/bin/python`
   yaz (projeye özel Python budur).
-- **Yanlış klasördeyim:** her komuttan önce `cd /Users/mac/code/ersinisgor/job-apply-agent`.
+- **Yanlış klasördeyim:** her komuttan önce `cd /Users/mac/code/ersinisgor/job-application-agent`.
 - **Bir ilan atlandı / N'de `Kalkmış` yazıyor:** ilan yayından kalkmış (ya da LinkedIn okumayı
   engellemiş); o satır için CV üretilmedi, CV numarası da harcanmadı, diğerleri devam etti.
   Tekrar denemek için N hücresini sil ve B'yi yine `Üretilecek` yap. İlan gerçekten kalktıysa ve
@@ -363,14 +363,14 @@ entegre FastAPI servisiyle (Haiku modeli) yapılır.
 
 **1. Tek komutla başlat** (özet API + CV poller birlikte; Ctrl+C ikisini birden durdurur):
 ```bash
-cd /Users/mac/code/ersinisgor/job-apply-agent
+cd /Users/mac/code/ersinisgor/job-application-agent
 ./scripts/start.sh
 ```
 > Sadece özet API'sini istersen: `./.venv/bin/python scripts/run_summary_api.py`
 
 **2. Extension'ı Chrome'a yükle (yalnızca ilk sefer):**
 - `chrome://extensions` → sağ üstten **Developer mode** aç.
-- **Load unpacked** → `job-apply-agent/extension` klasörünü seç.
+- **Load unpacked** → `job-application-agent/extension` klasörünü seç.
 
 **3. Kullan:** `https://www.linkedin.com/jobs/` sayfasında bir ilana tıkla → sağ panelde Türkçe özet.
 Başka ilana geçince güncellenir; daha önce baktığın ilana dönünce anında (önbellekten) gelir.
