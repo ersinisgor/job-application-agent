@@ -123,6 +123,9 @@ def run_claude(prompt: str, *, model: str, effort: str, timeout: int) -> AgentRe
             cmd,
             cwd=PROJECT_ROOT,
             env=_child_env(),
+            # claude -p, stdin bir pipe ise içeriğini prompt'a ekler. Üst sürecin stdin'i
+            # (cron'un, bir heredoc'un ya da başka bir pipe'ın içeriği) asla prompt'a sızmasın.
+            stdin=subprocess.DEVNULL,
             capture_output=True,
             text=True,
             timeout=timeout,
