@@ -1,13 +1,13 @@
-"""One-time OAuth login so the agent can create Google Docs in your Drive.
+"""Sistemin Drive'ında Google Doc oluşturabilmesi için tek seferlik OAuth girişi.
 
-Prerequisite: download an OAuth client ID (type "Desktop app") from Google Cloud
-Console and save it as credentials/oauth_client.json.
+Ön koşul: Google Cloud Console'dan bir OAuth istemci kimliği ("Desktop app" türünde) indir
+ve credentials/oauth_client.json olarak kaydet.
 
-Usage:
+Kullanım:
     python scripts/google_login.py
 
-A browser opens for you to grant access. The resulting token (with a refresh token
-for unattended use) is saved to credentials/oauth_token.json.
+Erişim izni vermen için bir tarayıcı açılır. Ortaya çıkan token (gözetimsiz kullanım için
+yenileme token'ıyla) credentials/oauth_token.json'a kaydedilir.
 """
 from __future__ import annotations
 

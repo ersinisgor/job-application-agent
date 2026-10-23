@@ -1,10 +1,10 @@
-"""One-time helper: log in to Huntr so the agent can read your board.
+"""Tek seferlik yardımcı: sistem board'unu okuyabilsin diye Huntr'a giriş yap.
 
-Uses a persistent real-Chrome profile and removes automation flags, so Google
-sign-in ("Bu tarayıcı güvenli olmayabilir") is not blocked. The session is stored
-in credentials/huntr_profile/ and reused automatically afterwards.
+Kalıcı, gerçek bir Chrome profili kullanır ve otomasyon bayraklarını kaldırır; böylece
+Google girişi ("Bu tarayıcı güvenli olmayabilir") engellenmez. Oturum
+credentials/huntr_profile/ altında saklanır ve sonrasında kendiliğinden yeniden kullanılır.
 
-Usage:
+Kullanım:
     python scripts/huntr_login.py
 """
 from __future__ import annotations

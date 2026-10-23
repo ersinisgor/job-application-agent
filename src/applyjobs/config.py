@@ -1,6 +1,6 @@
-"""Central configuration: loads .env and resolves project paths.
+"""Merkezi yapılandırma: .env'i yükler ve proje yollarını çözer.
 
-All other modules import `settings` from here.
+Diğer bütün modüller `settings`'i buradan import eder.
 """
 from __future__ import annotations
 
@@ -10,12 +10,12 @@ from pathlib import Path
 
 from dotenv import load_dotenv
 
-# Project root = two levels up from this file (src/applyjobs/config.py -> project root)
+# Proje kökü = bu dosyanın iki üst klasörü (src/applyjobs/config.py -> proje kökü)
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
 load_dotenv(PROJECT_ROOT / ".env")
 
-# The candidate's facts (CV + projects): the single source of truth every agent reads.
+# Adayın gerçekleri (CV + projeler): her agent'ın okuduğu tek gerçek kaynak.
 PROFILE_DIR = PROJECT_ROOT / "profile"
 TEMPLATES_DIR = PROJECT_ROOT / "templates"
 # Doğrudan API ile çağrılan tek model işinin (panel özeti) Türkçe system prompt'u.
@@ -23,72 +23,70 @@ PROMPTS_DIR = PROJECT_ROOT / "prompts"
 SUMMARY_PROMPT_FILE = PROMPTS_DIR / "ozet_sistem.md"
 CREDENTIALS_DIR = PROJECT_ROOT / "credentials"
 STATE_DIR = PROJECT_ROOT / "state"
-# Generated CVs, analyses, job descriptions and cover letters (gitignored).
+# Üretilen CV'ler, analizler, ilan metinleri ve mektuplar (gitignore'da).
 OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 
-# Config asset files
+# Yapılandırma dosyaları
 CV_BASE_FILE = PROFILE_DIR / "cv_base.md"
 PROJECTS_LIST_FILE = PROFILE_DIR / "projects.md"
 
-# Config asset: the .docx template for the Google Docs output
+# Yapılandırma dosyası: Google Docs çıktısı için .docx şablonu
 CV_TEMPLATE_FILE = TEMPLATES_DIR / "cv_template.docx"
 
-# Credential files
+# Kimlik bilgisi dosyaları
 SERVICE_ACCOUNT_FILE = CREDENTIALS_DIR / "service_account.json"
 LINKEDIN_STATE_FILE = CREDENTIALS_DIR / "linkedin_state.json"
-# Huntr login is Google-SSO gated, which blocks automated browsers. We therefore use
-# a persistent real-Chrome profile (not a storage_state file) so the session sticks
-# and Google's "browser not secure" block is avoided.
+# Huntr girişi Google SSO arkasında; bu da otomatik tarayıcıları engelliyor. Bu yüzden
+# bir storage_state dosyası yerine kalıcı, gerçek bir Chrome profili kullanıyoruz: oturum
+# kalıcı olur ve Google'ın "tarayıcı güvenli değil" engeli aşılmış olur.
 HUNTR_PROFILE_DIR = CREDENTIALS_DIR / "huntr_profile"
-# OAuth (user) credentials for creating Google Docs in Drive
+# Drive'da Google Doc oluşturmak için OAuth (kullanıcı) kimlik bilgileri
 OAUTH_CLIENT_FILE = CREDENTIALS_DIR / "oauth_client.json"
 OAUTH_TOKEN_FILE = CREDENTIALS_DIR / "oauth_token.json"
 
-# State
+# Durum dosyaları
 PROCESSED_STATE_FILE = STATE_DIR / "processed.json"
-# Huntr board job keys we've already processed (baseline + handled). Replaces the old
-# createdAt cursor, which was unreliable (createdAt isn't always the save time).
+# Daha önce işlenmiş Huntr board ilan anahtarları (başlangıç + işlenenler). Eski createdAt
+# imlecinin yerini aldı; o güvenilir değildi (createdAt her zaman kaydetme zamanı değil).
 HUNTR_SEEN_FILE = STATE_DIR / "huntr_seen.json"
-# Legacy: highest Huntr job createdAt (no longer used; kept so old files are harmless).
+# Eski: en yüksek Huntr createdAt (artık kullanılmıyor; eski dosyalar zararsız kalsın diye duruyor).
 HUNTR_CURSOR_FILE = STATE_DIR / "huntr_cursor.txt"
-# Job-summary cache for the browser-extension API, keyed by LinkedIn job id, so a
-# posting is summarized once and survives an API restart.
+# Extension API'sinin özet önbelleği, LinkedIn ilan no'suna göre anahtarlı: bir ilan bir kez
+# özetlenir ve API yeniden başlasa da kalır.
 SUMMARY_CACHE_FILE = STATE_DIR / "summary_cache.json"
 
-# Job descriptions staged by the extension panel's "Ekle" button, keyed by LinkedIn job
-# id. The poller's guest-view scrape stays PRIMARY; this text is only read when that
-# scrape fails, so a CV is still produced from what the user actually saw in the panel.
+# Panelin "Ekle" butonunun kaydettiği ilan metinleri, LinkedIn ilan no'suna göre anahtarlı.
+# Misafir görünümlü scrape BİRİNCİL kaynak olarak kalır; bu metin yalnızca o scrape başarısız
+# olursa (ve --allow-staged istenirse) okunur, böylece CV kullanıcının panelde gördüğü metinden
+# yine de üretilebilir.
 PENDING_JD_DIR = STATE_DIR / "pending_jd"
-# Below this many characters the staged text is not a posting (a half-loaded stub), and
-# a CV grounded in it would be worse than none. Deliberately above scraper's 80-char floor.
+# Bunun altındaki metin bir ilan değildir (yarım yüklenmiş bir parça) ve ona dayanan bir CV
+# hiç CV olmamasından kötüdür. Bilerek scraper'ın 80 karakterlik tabanının üstünde.
 PENDING_JD_MIN_CHARS = 200
-# Staged files are deleted once their CV is written; anything older than this is junk
-# (row deleted by hand, CV generation off, an append that failed).
+# Kaydedilen dosyalar CV'leri yazılınca silinir; bundan eski olan her şey çöptür (elle silinmiş
+# satır, kapalı CV üretimi, başarısız bir satır ekleme).
 PENDING_JD_MAX_AGE_DAYS = 14
 
-# Advisory lock guarding a whole download -> edit -> upload of the .xlsx. Two processes
-# now write it: the CV poller and the summary API (the panel's "Ekle" button).
+# .xlsx'in indir -> düzenle -> yükle döngüsünün tamamını koruyan danışma kilidi. Dosyaya artık
+# birden çok süreç yazıyor: CV agent'ının MCP sunucusu, poller ve özet API'si (panelin "Ekle" butonu).
 SHEET_LOCK_FILE = STATE_DIR / "sheet.lock"
 
-# Values in the "Başvuru" (B) column that DO trigger CV generation. An allow-list on
-# purpose: a row is added to the sheet the moment the posting looks interesting, but the
-# application often happens days later, by which time the posting may be gone — so a CV
-# made at add time is frequently a CV for a job never applied to. The user marks the row
-# "Üretilecek" when actually applying, and only then is a CV made. Keep this in sync with
-# sheets.DROPDOWNS["B"], which is what the sheet's dropdown actually offers.
+# "Başvuru" (B) sütununda CV üretimini TETİKLEYEN değerler. Bilerek bir izin listesi: ilan ilginç
+# göründüğü an satır sheet'e eklenir, ama başvuru çoğu zaman günler sonra yapılır ve o zamana kadar
+# ilan kalkmış olabilir — yani ekleme anında üretilen CV çoğu kez hiç başvurulmayan bir işin CV'si
+# olur. Kullanıcı gerçekten başvururken satırı "Üretilecek" yapar ve CV ancak o zaman üretilir.
+# Bunu sheets.DROPDOWNS["B"] ile senkron tut; sheet'in dropdown'ı gerçekte onu sunar.
 CV_TRIGGER_BASVURU_VALUES = {"Üretilecek"}
 
-# Marker written to the CV No column (N) for rows imported while CV generation is OFF.
-# It is non-numeric, so it is ignored by CV numbering yet still counts as "done" — the
-# row keeps its scraped info but is never (re-)assigned a CV. Clear it manually to make
-# the row eligible for a CV again.
+# CV üretimi KAPALIYKEN içe aktarılan satırlar için CV No sütununa (N) yazılan işaretçi. Sayısal
+# değil; bu yüzden CV numaralandırmasında yok sayılır ama yine de "yapıldı" sayılır — satır okunan
+# bilgisini korur ama ona asla (yeniden) CV atanmaz. Satırı yeniden CV'ye uygun yapmak için elle sil.
 NO_CV_MARKER = "Yok"
 
-# Marker written to N when a marked row's posting can no longer be fetched. No CV is made
-# and no CV number is consumed: the whole point of the deferred trigger is to not spend a
-# generation on a posting that is gone. Clear N and re-mark B to try again (a scrape can
-# also fail for LinkedIn-side reasons), or force one from the panel's staged text with
-# `run_once.py --row N --allow-staged`.
+# İşaretli bir satırın ilanı artık okunamıyorsa N'ye yazılan işaretçi. CV üretilmez ve CV numarası
+# harcanmaz: ertelenmiş tetiğin bütün amacı kalkmış bir ilana üretim harcamamak. Tekrar denemek için N'yi
+# temizle ve B'yi yeniden işaretle (scrape LinkedIn tarafındaki nedenlerle de başarısız olabilir), ya da
+# panelin kaydettiği metinle zorla üret: `run_once.py --row N --allow-staged`.
 EXPIRED_MARKER = "Kalkmış"
 
 
@@ -115,11 +113,11 @@ class Settings:
     # claude CLI'nin yolu. Boşsa PATH'te, sonra ~/.local/bin/claude'da aranır (Finder'dan
     # çift tıklanan .command dosyalarında PATH dar olur).
     claude_bin: str
-    # Model used by the LinkedIn Job Summary API (separate from claude_model, which
-    # is used for CV generation). Defaults to Haiku for fast, low-cost summaries.
+    # LinkedIn İlan Özeti API'sinin modeli (CV agent'larının cv_model'inden ayrı). Hızlı ve
+    # ucuz özetler için varsayılan Haiku.
     summary_model: str
-    # Model used for on-demand cover letters (separate again: the letter is short
-    # prose, so it needs neither the CV's thinking budget nor the summary's Haiku).
+    # İstendiğinde üretilen mektupların modeli (yine ayrı: mektup kısa bir düzyazı; ne CV'nin
+    # düşünme bütçesine ne de özetin Haiku'suna ihtiyaç duyar).
     cover_letter_model: str
     cv_review: bool
     cv_generation: bool
@@ -137,13 +135,13 @@ class Settings:
 
     @classmethod
     def load(cls) -> "Settings":
-        # Every generated file lives inside the project, under outputs/ (gitignored).
+        # Üretilen her dosya proje içinde, outputs/ altında durur (gitignore'da).
         default_output = str(OUTPUTS_DIR / "cv")
         default_analysis = str(OUTPUTS_DIR / "cv" / "analysis")
         default_jd = str(OUTPUTS_DIR / "job_descriptions")
-        # Shares a folder with the hand-made legacy letters (cover_letter_<no>_<be|fs>.docx,
-        # up to No. 138). New files are cover_letter_<no>_<lang>.md — different suffix and
-        # extension, so they coexist. Never glob this directory to find a letter.
+        # El yapımı eski mektuplarla aynı klasörü paylaşır (cover_letter_<no>_<be|fs>.docx, No. 138'e
+        # kadar). Yeni dosyalar cover_letter_<no>_<lang>.md — farklı ek ve uzantı, birlikte durabilirler.
+        # Bir mektubu bulmak için bu klasörde asla glob yapma.
         default_cover = str(OUTPUTS_DIR / "cover_letters")
         return cls(
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
@@ -151,17 +149,16 @@ class Settings:
             # low / medium / high / xhigh / max. medium, ölçülmüş en iyi denge (bkz. KULLANIM.md).
             cv_effort=os.getenv("CV_EFFORT", "medium").strip().lower(),
             claude_bin=os.getenv("CLAUDE_BIN", "").strip(),
-            # Model for the LinkedIn Job Summary API (extension). Haiku by default.
+            # LinkedIn İlan Özeti API'sinin (extension) modeli. Varsayılan Haiku.
             summary_model=os.getenv("SUMMARY_MODEL", "claude-haiku-4-5"),
             # Mektuplar: cover-letter-writer agent'ı bu modelle, düşük effort ile çalışır.
             cover_letter_model=os.getenv("COVER_LETTER_MODEL", "claude-sonnet-5"),
-            # Second expert QA pass on each CV (OFF by default: the verify/fix
-            # checklist is folded into the single generation prompt, STEP 12).
+            # Her CV'ye ikinci bir uzman QA geçişi (cv-reviewer agent'ı). Varsayılan KAPALI: doğrula/düzelt
+            # kontrol listesi zaten tek üretim geçişinin içinde (ats-cv-kurallari, ADIM 12).
             cv_review=_env_bool("CV_REVIEW", False),
-            # Master switch for CV generation. ON (default): new jobs get a full CV +
-            # sheet info. OFF: new jobs are still imported and their page info is written
-            # to the sheet, but NO CV is produced (column N gets the marker "Yok" so the
-            # row is not retro-generated when the switch is turned back on).
+            # CV üretiminin ana anahtarı. AÇIK (varsayılan): işaretli satırlara tam CV + sheet bilgisi.
+            # KAPALI: satırlar yine işlenir ve sayfa bilgisi sheet'e yazılır, ama CV ÜRETİLMEZ (N sütununa
+            # "Yok" işaretçisi yazılır, böylece anahtar yeniden açılınca satır geriye dönük üretilmez).
             cv_generation=_env_bool("CV_GENERATION", True),
             spreadsheet_id=os.getenv("SPREADSHEET_ID", ""),
             sheet_name=os.getenv("SHEET_NAME", "Sayfa1"),
@@ -172,19 +169,19 @@ class Settings:
             cover_letter_dir=_expand(os.getenv("COVER_LETTER_DIR", default_cover)),
             resumes_folder_name=os.getenv("RESUMES_FOLDER_NAME", "Resumes Based on Jobs"),
             resumes_folder_id=os.getenv("RESUMES_FOLDER_ID", ""),
-            # Huntr is OFF unless a board URL is provided (feature flag).
+            # Board URL'si verilmedikçe Huntr KAPALI (özellik bayrağı).
             huntr_board_url=os.getenv("HUNTR_BOARD_URL", ""),
             huntr_poll_interval=int(os.getenv("HUNTR_POLL_INTERVAL", "30")),
         )
 
     @property
     def markdown_dir(self) -> Path:
-        """Where the Markdown CVs live (subfolder of the CVs output dir)."""
+        """Markdown CV'lerin durduğu yer (CV çıktı klasörünün alt klasörü)."""
         return self.output_dir / "markdown"
 
     @property
     def pdf_dir(self) -> Path:
-        """Where the CV PDFs (exported from the Google Docs) are downloaded."""
+        """Google Doc'lardan dışa aktarılan CV PDF'lerinin indirildiği yer."""
         return self.output_dir / "pdf"
 
     def validate(self) -> None:

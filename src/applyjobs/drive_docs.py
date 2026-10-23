@@ -1,12 +1,12 @@
-"""Upload the generated .docx to Drive as a native Google Doc, via OAuth.
+"""Üretilen .docx'i OAuth ile Drive'a yerel bir Google Doc olarak yükler.
 
-A service account cannot create files in a personal My Drive (storageQuotaExceeded),
-so Google Doc creation uses the user's own OAuth credentials. The .docx bytes are
-uploaded with the target mimeType `application/vnd.google-apps.document`, which makes
-Drive convert it to a real Google Doc inside the "Resumes Based on Jobs" folder.
+Bir servis hesabı kişisel bir My Drive'da dosya oluşturamaz (storageQuotaExceeded); bu
+yüzden Google Doc oluşturma kullanıcının kendi OAuth kimlik bilgilerini kullanır. .docx
+baytları hedef mimeType `application/vnd.google-apps.document` ile yüklenir; bu da Drive'ın
+onu "Resumes Based on Jobs" klasöründe gerçek bir Google Doc'a çevirmesini sağlar.
 
-The same client can then export that Doc back as a PDF (`export_as_pdf`) so a local
-PDF copy can be saved.
+Aynı istemci o Doc'u PDF olarak geri dışa aktarabilir (`export_as_pdf`); böylece yerel bir
+PDF kopyası kaydedilir.
 """
 from __future__ import annotations
 
@@ -79,17 +79,17 @@ class DriveDocsClient:
         return files[0]["id"] if files else None
 
     def export_as_pdf(self, file_id: str) -> bytes:
-        """Export a Google Doc as PDF bytes (Google's own Doc->PDF conversion).
+        """Bir Google Doc'u PDF baytları olarak dışa aktarır (Google'ın kendi Doc->PDF dönüşümü).
 
-        Uses files().export, which is fine for the small CV Docs (the export endpoint
-        caps at ~10 MB of exported content).
+        files().export kullanır; küçük CV Doc'ları için uygundur (export uç noktası dışa aktarılan
+        içeriği ~10 MB ile sınırlar).
         """
         return self._drive.files().export(
             fileId=file_id, mimeType="application/pdf"
         ).execute()
 
     def upload_as_google_doc(self, docx_bytes: bytes, name: str) -> str:
-        """Create (or update) a Google Doc named `name` from the .docx. Returns file id."""
+        """`.docx`'ten `name` adlı bir Google Doc oluşturur (ya da günceller). Dosya kimliğini döndürür."""
         folder_id = self._find_folder_id()
         media = MediaIoBaseUpload(io.BytesIO(docx_bytes), mimetype=DOCX_MIME, resumable=True)
 

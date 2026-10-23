@@ -1,13 +1,11 @@
-"""Make problems observable after the fact, instead of scrolling past in a terminal
-you are not watching.
+"""Sorunları, izlemediğin bir terminalde kayıp gitmek yerine sonradan görünür kılar.
 
-Three layers:
-  1. setup_logging() — console + a rotating file log (state/agent.log) with full detail
-     (tracebacks included), so nothing is lost.
-  2. record_failure() — appends ONE human-readable line per failure to
-     state/failures.log. This is the short "report" to glance at after a batch.
-  3. A best-effort macOS desktop notification on each failure, so you get alerted
-     without watching the terminal.
+Üç katman:
+  1. setup_logging() — konsol + tam ayrıntılı döner bir log dosyası (state/agent.log)
+     (traceback'ler dahil); hiçbir şey kaybolmaz.
+  2. record_failure() — her hata için state/failures.log'a insanın okuyabileceği TEK bir
+     satır ekler. Bir çalışmadan sonra göz atılacak kısa "rapor" budur.
+  3. Her hatada best-effort bir macOS masaüstü bildirimi; terminali izlemeden haberin olur.
 """
 from __future__ import annotations
 
@@ -29,14 +27,13 @@ LOG_DATEFMT = "%Y-%m-%d %H:%M:%S"
 
 
 def setup_console_logging(level: int = logging.INFO) -> None:
-    """Console-only logging, for the summary-API process. Safe to call twice.
+    """Yalnızca konsola loglama; özet API'si süreci için. İki kez çağırmak güvenli.
 
-    Deliberately NOT setup_logging(): that also attaches a RotatingFileHandler to
-    state/agent.log, which the poller already owns. Two processes rotating the same file
-    race and truncate each other's output. The API runs in the same terminal as the
-    poller (scripts/start.sh), so stdout is where its lines belong — without it, an
-    application-level log line (which row an "Ekle" hit, why a cover letter 404'd) goes
-    nowhere at all and only uvicorn's access line is visible.
+    Bilerek setup_logging() DEĞİL: o, state/agent.log'a bir RotatingFileHandler da bağlar ve o
+    dosyanın sahibi poller. Aynı dosyayı döndüren iki süreç yarışır ve birbirinin çıktısını
+    keser. API poller ile aynı terminalde çalışır (scripts/start.sh), yani satırlarının yeri
+    stdout — o olmadan uygulama düzeyindeki bir log satırı ("Ekle" hangi satıra yazdı, bir mektup
+    neden 404 verdi) hiçbir yere gitmez ve yalnızca uvicorn'un erişim satırı görünür.
     """
     root = logging.getLogger()
     root.setLevel(level)
@@ -44,15 +41,15 @@ def setup_console_logging(level: int = logging.INFO) -> None:
         return
     console = logging.StreamHandler(sys.stdout)
     console.setFormatter(logging.Formatter(LOG_FORMAT, LOG_DATEFMT))
-    console._applyjobs_console = True  # marker so a second call is a no-op
+    console._applyjobs_console = True  # işaret: ikinci bir çağrı etkisiz kalsın
     root.addHandler(console)
 
 
 def setup_logging(level: int = logging.INFO) -> None:
-    """Configure console + rotating-file logging. Safe to call once per program start."""
+    """Konsol + döner dosya loglamasını kurar. Program başlangıcında bir kez çağırmak güvenli."""
     STATE_DIR.mkdir(parents=True, exist_ok=True)
-    # Always create failures.log (empty) so its location is easy to find; an empty
-    # file simply means "no failures yet".
+    # failures.log'u her zaman (boş) oluştur ki yeri kolay bulunsun; boş bir dosya sadece
+    # "henüz hata yok" demektir.
     FAILURES_FILE.touch(exist_ok=True)
     root = logging.getLogger()
     root.setLevel(level)
@@ -74,7 +71,7 @@ def setup_logging(level: int = logging.INFO) -> None:
 
 
 def _notify(title: str, message: str) -> None:
-    """Best-effort macOS desktop notification; a no-op elsewhere or on any error."""
+    """Best-effort macOS masaüstü bildirimi; başka yerde ya da herhangi bir hatada etkisiz."""
     if sys.platform != "darwin":
         return
     try:
@@ -97,9 +94,9 @@ def record_failure(
     link: str = "",
     error: str = "",
 ) -> None:
-    """Record a failure: append to state/failures.log, log it, and raise a notification.
+    """Bir hatayı kaydeder: state/failures.log'a ekler, loglar ve bildirim gösterir.
 
-    stage examples: "generate", "drive_export", "sheet_write", "regenerate".
+    stage örnekleri: "generate", "drive_export", "sheet_write", "regenerate", "agent_run".
     """
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     ts = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -115,10 +112,10 @@ def record_failure(
 
 
 def record_duplicate(link: str, job_key: str, sheet_row: int | None = None) -> None:
-    """A job newly added to Huntr is already in the sheet, so no CV is produced for it.
+    """Huntr'a yeni eklenen bir ilan zaten sheet'te; bu yüzden onun için CV üretilmez.
 
-    Surfaced like a failure (desktop notification + a line in failures.log) so the user
-    notices it instead of assuming a CV was made.
+    Bir hata gibi yüzeye çıkarılır (masaüstü bildirimi + failures.log'da bir satır) ki
+    kullanıcı CV yapıldı sanmak yerine fark etsin.
     """
     STATE_DIR.mkdir(parents=True, exist_ok=True)
     job_id = job_key.split(":", 1)[-1]  # "li:4364788282" -> "4364788282"

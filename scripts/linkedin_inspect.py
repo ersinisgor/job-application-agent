@@ -1,7 +1,7 @@
-"""Inspect a LinkedIn job page: dump JSON-LD + candidate DOM for field mapping.
+"""Bir LinkedIn ilan sayfasını inceler: alan eşlemesi için JSON-LD + aday DOM'u döker.
 
-Usage:
-    python scripts/linkedin_inspect.py <linkedin-job-url>
+Kullanım:
+    python scripts/linkedin_inspect.py <linkedin-ilan-url>
 """
 from __future__ import annotations
 
@@ -20,8 +20,8 @@ def main() -> None:
     url = sys.argv[1] if len(sys.argv) > 1 else "https://www.linkedin.com/jobs/view/4421164942/"
     with sync_playwright() as pw:
         browser = pw.chromium.launch(headless=True)
-        # Guest context on purpose — attaching the real LinkedIn session to an
-        # automated browser gets the account flagged (see scraper.py docstring).
+        # Bilerek misafir bağlamı — gerçek LinkedIn oturumunu otomatik bir tarayıcıya bağlamak
+        # hesabın işaretlenmesine yol açar (bkz. scraper.py açıklaması).
         ctx = browser.new_context(user_agent=_USER_AGENT)
         page = ctx.new_page()
         page.goto(url, wait_until="domcontentloaded", timeout=45_000)

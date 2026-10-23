@@ -1,14 +1,14 @@
-"""Fill the .docx template with the job-tailored CV content.
+""".docx şablonunu ilana özel CV içeriğiyle doldurur.
 
-The generated Markdown CV (same section structure as the template) is parsed into
-sections and written into the template at the <w:t> (text node) level, so the
-template's exact formatting — fonts, sizes, spacing, margins, bold labels, and the
-project-title hyperlinks — is preserved. No extra bold is added: markdown ** markers
-are stripped to plain text, matching the example CV exactly.
+Üretilen Markdown CV (şablonla aynı bölüm yapısı) bölümlere ayrıştırılır ve şablona
+<w:t> (metin düğümü) düzeyinde yazılır; böylece şablonun birebir biçimi — yazı tipleri,
+boyutlar, aralıklar, kenar boşlukları, kalın etiketler ve proje başlığı köprüleri —
+korunur. Fazladan kalın eklenmez: Markdown ** işaretleri düz metne indirilir, örnek CV ile
+birebir eşleşir.
 
-Untouchable areas (photo, name, tagline, contact line, the "Software Developer -
-Başlangıç Noktası" experience, and the whole Education block) are never located, so
-they are left exactly as in the template.
+Dokunulmayan alanlar (fotoğraf, ad, slogan, iletişim satırı, "Software Developer -
+Başlangıç Noktası" deneyimi ve Education bloğunun tamamı) hiç aranmaz; şablondaki gibi
+aynen kalırlar.
 """
 from __future__ import annotations
 
@@ -30,12 +30,11 @@ XML_SPACE = qn("xml:space")
 # Markdown parsing
 # --------------------------------------------------------------------------- #
 
-# Both markers are accepted on purpose. cv_base.md is written with '*', but any
-# Markdown formatter (Prettier's format-on-save is the one that bit us) rewrites a
-# list to '-'. Matching only '*' made every bullet vanish from the parse, and
-# _fill_bullets() returns early on an empty list — so the template's frozen text
-# reached the employer instead of the generated bullets, silently. The trailing
-# \s+ keeps a '**Bold**' line from being read as a bullet.
+# İki işaret de bilerek kabul edilir. cv_base.md '*' ile yazılı, ama her Markdown biçimlendiricisi
+# (bizi ısıran Prettier'ın format-on-save'iydi) listeyi '-'ye çevirir. Yalnızca '*' ile eşleşmek
+# her maddenin ayrıştırmadan kaybolmasına yol açtı ve _fill_bullets() boş listede erken döner —
+# yani üretilen maddeler yerine şablonun donmuş metni işverene sessizce gitti. Sondaki \s+ bir
+# '**Bold**' satırının madde diye okunmasını engeller.
 _BULLET_RE = re.compile(r"^[*-]\s+")
 
 
@@ -48,25 +47,25 @@ def _bullet_text(line: str) -> str:
 
 
 def _strip_md(text: str) -> str:
-    """Remove markdown bold/italic markers and trailing <br>, return plain text.
+    """Markdown kalın/italik işaretlerini ve sondaki <br>'yi siler, düz metin döndürür.
 
-    Strips ** (bold) and * (italic, e.g. ``*(Ongoing)*``) so no markers leak into the
-    Google Doc, which must match the example CV exactly with no extra emphasis.
+    ** (kalın) ve * (italik, ör. ``*(Ongoing)*``) silinir ki Google Doc'a hiçbir işaret
+    sızmasın; Doc örnek CV ile fazladan vurgu olmadan birebir eşleşmeli.
     """
     text = text.replace("<br>", "").replace("**", "").replace("*", "")
     return text.strip()
 
 
-# A heading, with the '#' marks possibly wrapped in bold: '### SUMMARY', '#### [Title](url)',
-# and — because STEP 10 bolds every word a swapped-in project adds — '**#### [Title](url)**'.
-# Anchoring on a bare '#' silently dropped the whole project block (title, bullets AND tech
-# line) from the parse, so the template's frozen slot shipped in its place: cv_322's PDF lost
-# the API Hotel Project and listed Cloud File Storage twice.
+# '#' işaretleri kalın içine alınmış olabilecek bir başlık: '### SUMMARY', '#### [Title](url)',
+# ve — ADIM 10 takas edilen bir projenin eklediği her kelimeyi kalın yaptığı için —
+# '**#### [Title](url)**'. Çıplak bir '#'e çapalamak proje bloğunun tamamını (başlık, maddeler VE
+# tech satırı) ayrıştırmadan sessizce düşürdü, yerine şablonun donmuş yuvası gitti: cv_322'nin PDF'i
+# API Hotel Project'i kaybetti ve Cloud File Storage'ı iki kez listeledi.
 _HEADING_RE = re.compile(r"^(?:\*\*)?(#{3,4})\s+(.+)$")
 
 
 def _heading(line: str):
-    """('### '/'#### ' level, heading text) or None. Bold markers around '#' are tolerated."""
+    """('### '/'#### ' seviyesi, başlık metni) ya da None. '#' etrafındaki kalın işaretleri tolere edilir."""
     m = _HEADING_RE.match(line)
     return (len(m.group(1)), m.group(2).strip()) if m else None
 
@@ -75,12 +74,11 @@ _TITLE_LINK_RE = re.compile(r"^\[(?P<disp>.+?)\]\((?P<url>[^)\s]+)\)(?P<rest>.*)
 
 
 def _parse_title_link(text: str):
-    """A project title '[Display](https://github.com/...)' -> (display_text, url).
+    """Bir proje başlığı '[Display](https://github.com/...)' -> (display_text, url).
 
-    Returns (plain_title, "") when there is no link. Bold/italic markers are stripped
-    first, so a bold-wrapped title like '**[Display](url)**' still parses — otherwise
-    the leading '**' breaks the ^\\[ anchor, the URL is lost, and the slot silently
-    keeps the template's original (wrong) hyperlink.
+    Link yoksa (plain_title, "") döner. Önce kalın/italik işaretleri silinir; böylece
+    '**[Display](url)**' gibi kalına sarılmış bir başlık da ayrıştırılır — yoksa baştaki '**'
+    ^\\[ çapasını bozar, URL kaybolur ve yuva sessizce şablonun orijinal (yanlış) köprüsünü tutar.
     """
     m = _TITLE_LINK_RE.match(_strip_md(text))
     if m:
@@ -90,7 +88,7 @@ def _parse_title_link(text: str):
 
 
 def parse_markdown_cv(md: str) -> dict:
-    """Parse the generated CV markdown into structured, plain-text sections."""
+    """Üretilen CV Markdown'unu yapılandırılmış, düz metin bölümlere ayrıştırır."""
     lines = md.splitlines()
     section = None
     summary: list[str] = []
@@ -113,9 +111,9 @@ def parse_markdown_cv(md: str) -> dict:
         if not stripped:
             continue
         if section is None:
-            # Ignore any preamble before the first "### " header. Without this, a stray
-            # line before "### SUMMARY" reaches the section.startswith() check below and
-            # crashes with: 'NoneType' object has no attribute 'startswith'.
+            # İlk "### " başlığından önceki her önsözü yok say. Bu olmadan "### SUMMARY"den önceki başıboş
+            # bir satır aşağıdaki section.startswith() kontrolüne ulaşır ve şu hatayla çöker:
+            # 'NoneType' object has no attribute 'startswith'.
             continue
 
         if section == "SUMMARY":
@@ -137,12 +135,11 @@ def parse_markdown_cv(md: str) -> dict:
                 cur_project = {"title": disp, "title_url": url, "bullets": [], "tech": ""}
                 projects.append(cur_project)
             elif cur_project is not None:
-                # Strip the markers BEFORE testing for 'Tech:'. STEP 10 makes the model bold
-                # every word that differs from cv_base.md, so a project swapped in at STEP 8
-                # arrives fully bolded — '**Tech: Python, FastAPI, ...**'. Matching the raw
-                # line left tech empty, build_docx skips an empty tech, and the template's
-                # frozen Tech line (the PREVIOUS project's stack) shipped in the .docx/PDF
-                # while the markdown looked correct. Same trap _parse_title_link documents.
+                # 'Tech:' testinden ÖNCE işaretleri sil. ADIM 10 modele cv_base.md'den farklı her kelimeyi kalın
+                # yaptırır; yani ADIM 8'de takas edilen bir proje tamamen kalın gelir — '**Tech: Python, FastAPI, ...**'.
+                # Ham satırla eşleşmek tech'i boş bıraktı, build_docx boş tech'i atlar ve şablonun donmuş Tech satırı
+                # (ÖNCEKİ projenin stack'i) Markdown doğru görünürken .docx/PDF'e gitti. _parse_title_link'in
+                # belgelediği tuzağın aynısı.
                 plain = _strip_md(stripped)
                 if plain.lower().startswith("tech:"):
                     cur_project["tech"] = plain.split(":", 1)[1].strip()
@@ -150,27 +147,27 @@ def parse_markdown_cv(md: str) -> dict:
                     cur_project["bullets"].append(_bullet_text(stripped))
 
         elif section.startswith("PREVIOUS EXPERIENCE"):
-            # The role title now lives in the heading, so every line here is description.
+            # Rol başlığı artık başlık satırında; buradaki her satır açıklamadır.
             previous_exp.append(_strip_md(stripped))
 
     return {
         "summary": " ".join(summary).strip(),
         "core_skills": core_skills,
-        # Every EXPERIENCE entry in document order, each {title, bullets}. All of them
-        # are filled into the template — see build_docx.
+        # Belge sırasıyla her EXPERIENCE girdisi, her biri {title, bullets}. Hepsi şablona doldurulur —
+        # bkz. build_docx.
         "experience": experience,
         "projects": projects,
-        # The role title is in the heading now, so all collected lines are the description.
+        # Rol başlığı artık başlık satırında; toplanan bütün satırlar açıklamadır.
         "previous_exp_desc": " ".join(previous_exp).strip(),
     }
 
 
 # --------------------------------------------------------------------------- #
-# Low-level docx helpers (operate on <w:t> nodes to preserve all formatting)
+# Düşük seviye docx yardımcıları (bütün biçimi korumak için <w:t> düğümleri üzerinde çalışır)
 # --------------------------------------------------------------------------- #
 
 def _t_nodes(p) -> list:
-    """All <w:t> text nodes inside a paragraph, in document order (incl. hyperlinks)."""
+    """Bir paragraftaki bütün <w:t> metin düğümleri, belge sırasıyla (köprüler dahil)."""
     return p._p.findall(".//" + W_T)
 
 
@@ -184,16 +181,16 @@ def _set_node(node, text: str) -> None:
 
 
 def _replace_content(p, new_text: str, keep_prefix_nodes: int = 0) -> None:
-    """Put new_text into the first content text node, clearing later content nodes.
+    """new_text'i ilk içerik metin düğümüne koyar, sonraki içerik düğümlerini temizler.
 
-    keep_prefix_nodes: number of leading <w:t> nodes to leave untouched (e.g. a bold
-    label like 'Backend:' or a bullet '• ' or 'Tech:').
+    keep_prefix_nodes: dokunulmadan bırakılacak baştaki <w:t> düğümü sayısı (ör. 'Backend:'
+    gibi kalın bir etiket, bir madde işareti '• ' ya da 'Tech:').
     """
     nodes = _t_nodes(p)
     if len(nodes) <= keep_prefix_nodes:
         return
     content_nodes = nodes[keep_prefix_nodes:]
-    # Preserve a leading space if the label node didn't end with one.
+    # Etiket düğümü boşlukla bitmiyorsa baştaki boşluğu koru.
     prefix_text = nodes[keep_prefix_nodes - 1].text if keep_prefix_nodes else ""
     lead = " " if (prefix_text and not prefix_text.endswith(" ")) else ""
     _set_node(content_nodes[0], lead + new_text)
@@ -202,11 +199,11 @@ def _replace_content(p, new_text: str, keep_prefix_nodes: int = 0) -> None:
 
 
 def _set_bullet_text(p, text: str) -> None:
-    """Set a bullet paragraph's text, keeping the '• ' glyph and node[0] formatting.
+    """Bir madde paragrafının metnini ayarlar; '• ' işaretini ve node[0] biçimini korur.
 
-    Handles both template layouts: glyph+text in one <w:t> node, or '• ' and content
-    split across two nodes. We collapse everything into the first node (bullets are
-    plain non-bold, so this preserves the exact look).
+    İki şablon yerleşimini de işler: işaret+metin tek bir <w:t> düğümünde, ya da '• ' ve içerik
+    iki düğüme bölünmüş. Her şeyi ilk düğümde birleştiririz (maddeler düz, kalın değil; bu
+    birebir görünümü korur).
     """
     nodes = _t_nodes(p)
     if not nodes:
@@ -217,7 +214,7 @@ def _set_bullet_text(p, text: str) -> None:
 
 
 def _set_hyperlink_target(p, url: str) -> None:
-    """Point the paragraph's hyperlink (e.g. a project title) at `url`."""
+    """Paragrafın köprüsünü (ör. bir proje başlığı) `url`'ye yönlendirir."""
     hl = p._p.find(qn("w:hyperlink"))
     if hl is None:
         return
@@ -236,7 +233,7 @@ def _is_tech(p) -> bool:
 
 
 def _clone_after(p):
-    """Deep-copy paragraph p and insert the copy right after it. Returns the new CT_P."""
+    """p paragrafının derin kopyasını alır ve kopyayı hemen arkasına ekler. Yeni CT_P'yi döndürür."""
     new_p = copy.deepcopy(p._p)
     p._p.addnext(new_p)
     return new_p
@@ -258,10 +255,10 @@ def _find_header(paragraphs, prefix: str) -> int:
 
 
 def _fill_bullets(bullet_paras: list, new_bullets: list[str]) -> None:
-    """Match the number of bullet paragraphs to new_bullets, then set their text.
+    """Madde paragraflarının sayısını new_bullets'a eşitler, sonra metinlerini ayarlar.
 
-    bullet_paras: existing template bullet Paragraph objects (>=1). The bullet glyph
-    ('• ') sits in the first text node, which we keep.
+    bullet_paras: şablonda var olan madde Paragraph nesneleri (>=1). Madde işareti ('• ')
+    ilk metin düğümünde durur ve korunur.
     """
     if not bullet_paras or not new_bullets:
         return
@@ -271,7 +268,7 @@ def _fill_bullets(bullet_paras: list, new_bullets: list[str]) -> None:
     parent = bullet_paras[0]._parent
     elems = [bp._p for bp in bullet_paras]
 
-    # Grow: clone the last bullet element as needed.
+    # Büyüt: son madde öğesini gerektiği kadar klonla.
     while len(elems) < len(new_bullets):
         last = elems[-1]
         new_el = copy.deepcopy(last)
@@ -286,13 +283,13 @@ def _fill_bullets(bullet_paras: list, new_bullets: list[str]) -> None:
 
 
 def _fill_core_skills(skill_paras: list, lines: list[str]) -> None:
-    """Fill the 'Label: content' skill paragraphs, one per markdown line.
+    """'Etiket: içerik' beceri paragraflarını doldurur, Markdown satırı başına bir tane.
 
-    The template ships a fixed set of slots, but the CV may legitimately carry a
-    different number of skill lines (the Frontend line is dropped for a pure back-end
-    posting), so grow/shrink the slots like the bullet lists do. The bold LABEL is taken
-    from the markdown too: filling only the content would silently shift every line
-    under the template's original label once a line is added or removed.
+    Şablon sabit sayıda yuvayla gelir, ama CV meşru olarak farklı sayıda beceri satırı
+    taşıyabilir (saf back-end ilanında Frontend satırı çıkarılır); bu yüzden yuvalar madde
+    listeleri gibi büyütülür/küçültülür. Kalın ETİKET de Markdown'dan alınır: yalnızca içeriği
+    doldurmak, bir satır eklendiği ya da çıkarıldığı anda her satırı şablonun orijinal
+    etiketinin altına sessizce kaydırırdı.
     """
     if not skill_paras or not lines:
         return
@@ -315,7 +312,7 @@ def _fill_core_skills(skill_paras: list, lines: list[str]) -> None:
         if not nodes:
             continue
         label, sep, content = line.partition(":")
-        if not sep:  # no label on this line: drop it all into the content node
+        if not sep:  # bu satırda etiket yok: hepsini içerik düğümüne koy
             _replace_content(p, line.strip(), keep_prefix_nodes=0)
             continue
         _set_node(nodes[0], f"{label.strip()}:")
@@ -323,12 +320,12 @@ def _fill_core_skills(skill_paras: list, lines: list[str]) -> None:
 
 
 def build_docx(markdown_cv: str) -> bytes:
-    """Return a .docx (bytes) = template filled with the job-tailored CV content."""
+    """Bir .docx (bayt) döndürür = ilana özel CV içeriğiyle doldurulmuş şablon."""
     data = parse_markdown_cv(markdown_cv)
     doc = Document(str(CV_TEMPLATE_FILE))
     paras = doc.paragraphs
 
-    # --- SUMMARY: the first non-empty paragraph after the SUMMARY header ---
+    # --- SUMMARY: SUMMARY başlığından sonraki ilk boş olmayan paragraf ---
     i = _find_header(paras, "SUMMARY")
     for p in paras[i + 1:]:
         if _para_text(p).strip():
@@ -341,34 +338,34 @@ def build_docx(markdown_cv: str) -> bytes:
     skill_paras = [p for p in paras[cs_start + 1: exp_start] if _para_text(p).strip()]
     _fill_core_skills(skill_paras, data["core_skills"])
 
-    # Slots may have been added/removed above, so re-read the paragraph list.
+    # Yukarıda yuvalar eklenmiş/çıkarılmış olabilir; paragraf listesini yeniden oku.
     paras = doc.paragraphs
     exp_start = _find_header(paras, "EXPERIENCE")
 
-    # --- EXPERIENCE: fill EVERY entry's bullets, positionally ---
-    # Entry titles are deliberately NOT filled: the template's wording is the designed
-    # one (e.g. it spaces the date as "Jun – Aug 2025" where cv_base.md writes
-    # "Jun–Aug 2025"), and across every CV generated so far the markdown's titles match
-    # cv_base.md exactly — so there is nothing to copy over and something to lose.
+    # --- EXPERIENCE: HER girdinin maddelerini sırayla doldur ---
+    # Girdi başlıkları bilerek DOLDURULMAZ: şablonun ifadesi tasarlanmış olandır (ör. tarihi
+    # "Jun – Aug 2025" diye aralıklı yazar, cv_base.md ise "Jun–Aug 2025" yazar) ve şimdiye kadar
+    # üretilen her CV'de Markdown başlıkları cv_base.md ile birebir aynı — yani kopyalanacak bir şey
+    # yok, kaybedilecek bir şey var.
     proj_start = _find_header(paras, "SELECTED PROJECTS")
-    entry_slots: list[list] = []  # bullet paragraphs, one list per entry, in order
+    entry_slots: list[list] = []  # madde paragrafları, girdi başına bir liste, sırayla
     cur_slot: list | None = None
     for p in paras[exp_start + 1: proj_start]:
         if not _para_text(p).strip():
             continue
-        if not _is_bullet(p):  # an entry title line opens a new entry
+        if not _is_bullet(p):  # bir girdi başlık satırı yeni bir girdi açar
             cur_slot = []
             entry_slots.append(cur_slot)
         elif cur_slot is not None:
             cur_slot.append(p)
-    # Growing/shrinking one entry only touches elements between its own title and the
-    # next, so the later entries' Paragraph objects stay valid.
+    # Bir girdiyi büyütmek/küçültmek yalnızca kendi başlığı ile sonrakinin arasındaki öğelere dokunur;
+    # böylece sonraki girdilerin Paragraph nesneleri geçerli kalır.
     for slot, entry in zip(entry_slots, data["experience"]):
         _fill_bullets(slot, entry["bullets"])
 
-    # --- SELECTED PROJECTS: positional fill of each project slot ---
+    # --- SELECTED PROJECTS: her proje yuvasını sırayla doldur ---
     edu_start = _find_header(paras, "EDUCATION")
-    # Group region into blocks: each block starts at a non-bullet/non-tech title line.
+    # Bölgeyi bloklara ayır: her blok madde/tech olmayan bir başlık satırıyla başlar.
     blocks: list[dict] = []
     cur: dict | None = None
     for p in paras[proj_start + 1: edu_start]:
@@ -384,11 +381,11 @@ def build_docx(markdown_cv: str) -> bytes:
             cur = {"title": p, "bullets": [], "tech": None}
             blocks.append(cur)
 
-    # A slot with no project to fill it would otherwise keep the template's frozen content —
-    # a project the model deliberately dropped, shipping under the CV the user reviewed (and,
-    # when the drop is a parse failure, duplicating the project in the slot before it). Drop
-    # the surplus slots instead. Nothing grows here: the markdown never has MORE projects than
-    # the template has slots, and an extra project would silently vanish if it did.
+    # Dolduracak projesi olmayan bir yuva aksi halde şablonun donmuş içeriğini tutardı — modelin
+    # bilerek çıkardığı bir proje, kullanıcının incelediği CV'nin altında gönderilirdi (ve çıkarma bir
+    # ayrıştırma hatasıysa, projeyi önceki yuvada çoğaltırdı). Bunun yerine fazla yuvaları sil. Burada
+    # büyütme yok: Markdown'da asla şablondaki yuvalardan FAZLA proje olmaz ve olsaydı fazla proje
+    # sessizce kaybolurdu.
     for slot in blocks[len(data["projects"]):]:
         for p in [slot["title"], *slot["bullets"]] + ([slot["tech"]] if slot["tech"] is not None else []):
             _remove(p._p)
@@ -402,8 +399,8 @@ def build_docx(markdown_cv: str) -> bytes:
         if slot["tech"] is not None and proj["tech"]:
             _replace_content(slot["tech"], proj["tech"], keep_prefix_nodes=1)
 
-    # --- PREVIOUS EXPERIENCE: the role title now lives in the header line, so the
-    # first non-empty paragraph after the header is the description itself. ---
+    # --- PREVIOUS EXPERIENCE: rol başlığı artık başlık satırında; yani başlıktan sonraki ilk boş
+    # olmayan paragraf açıklamanın kendisidir. ---
     if data["previous_exp_desc"]:
         pe_start = _find_header(paras, "PREVIOUS EXPERIENCE")
         for p in paras[pe_start + 1:]:

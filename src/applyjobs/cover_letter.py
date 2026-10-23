@@ -1,21 +1,20 @@
-"""On-demand cover letters, generated from a job's already-saved CV + job description.
+"""İstendiğinde üretilen mektuplar; bir ilanın zaten kaydedilmiş CV'si + ilan metninden.
 
-Only some applications ask for a cover letter, so producing one alongside every CV
-would burn money on letters that are never used. This module makes one on request.
+Her başvuru mektup istemez; her CV'nin yanında bir mektup üretmek hiç kullanılmayan
+mektuplara para/kota yakardı. Bu modül istek üzerine bir tane üretir.
 
-Two things worth knowing before changing anything here:
+Burada bir şey değiştirmeden önce bilinmesi gereken üç şey:
 
-* **The file IS the cache.** A letter lives at cover_letter_<no>_<lang>.md, and its
-  existence is the only "already done" record — there is no cache file, no version
-  stamp, and nothing in the sheet. get_or_create() re-reads it instead of calling the
-  model; only force=True regenerates. Identity includes the language, because EN and
-  TR are two different artifacts (asking for TR after generating EN must not silently
-  hand back the EN letter).
-* **No pipeline import.** summary_api imports this module, and pipeline pulls in
-  Playwright at module scope — see joblookup.py.
-* **The letter is written by an agent.** On a cache miss get_or_create() runs
-  `claude -p "/mektup <no> <lang>"` (agent_runner) and reads back the file that the
-  cover-letter-writer agent saved through the cv-tools MCP server (save_cover_letter).
+* **Dosyanın kendisi önbellektir.** Bir mektup cover_letter_<no>_<lang>.md'de durur ve
+  varlığı tek "zaten yapıldı" kaydıdır — önbellek dosyası yok, sürüm damgası yok, sheet'te
+  hiçbir şey yok. get_or_create() modeli çağırmak yerine onu yeniden okur; yalnızca
+  force=True yeniden üretir. Kimlik dili de içerir, çünkü EN ve TR iki farklı çıktıdır (EN
+  üretildikten sonra TR istemek EN mektubu sessizce geri vermemeli).
+* **pipeline import yok.** summary_api bu modülü import eder ve pipeline Playwright'ı
+  modül düzeyinde çeker — bkz. joblookup.py.
+* **Mektubu bir agent yazar.** Önbellekte yoksa get_or_create() `claude -p "/mektup <no>
+  <lang>"` çalıştırır (agent_runner) ve cover-letter-writer agent'ının cv-tools MCP
+  sunucusu üzerinden kaydettiği dosyayı (save_cover_letter) geri okur.
 """
 from __future__ import annotations
 
@@ -31,30 +30,31 @@ from .sheets import COL_COMPANY, COL_POZISYON, Row, SheetsClient
 
 logger = logging.getLogger(__name__)
 
-# Output languages. Value is what the prompt tells the model to write in.
+# Çıktı dilleri. Değer, agent'a mektubun hangi dilde yazılacağını söyleyen addır.
 LANGS = {"en": "English", "tr": "Turkish"}
 
-# The exact block the letter must end with, per language. Kept here rather than in the
-# prompt because the model kept dropping the name when the rule was prose ("Sign off as
-# Ersin Isgor") — a letter that ends "Best regards," is one the user pastes unsigned.
+# Mektubun bitmesi gereken birebir blok, dil başına. Prompt yerine burada tutuluyor, çünkü kural
+# düzyazıyken ("Ersin Isgor olarak imzala") model adı düşürüp duruyordu — "Best regards," ile
+# biten bir mektup, kullanıcının imzasız yapıştırdığı mektuptur.
 SIGN_OFFS = {"en": "Best regards,\n\nErsin Isgor", "tr": "Saygılarımla,\n\nErsin Isgor"}
 
 _LETTER_RE = re.compile(r"<LETTER_START>(.*?)<LETTER_END>", re.DOTALL)
-# The bookkeeping header _write puts at the top of each saved letter.
+# _write'ın kaydedilen her mektubun başına koyduğu kayıt başlığı.
 _META_RE = re.compile(r"\A\s*<!--[^>]*-->\s*")
 
 
 def cover_letter_path(cv_no: int, lang: str) -> Path:
-    """Where a letter lives. Exact path only — NEVER glob this directory: the legacy
-    hand-made letters (cover_letter_117_fs.docx and friends) share it."""
+    """Bir mektubun durduğu yer. Yalnızca birebir yol — bu klasörde ASLA glob yapma: el yapımı
+    eski mektuplar (cover_letter_117_fs.docx ve benzerleri) de burada.
+    """
     return settings.cover_letter_dir / f"cover_letter_{cv_no}_{lang}.md"
 
 
 def _load_cv(cv_no: int) -> str:
-    """The tailored CV markdown for this job.
+    """Bu ilan için uyarlanmış CV Markdown'u.
 
-    CVs only exist from No. 200 up; below that neither the CV nor the saved job
-    description was kept, so a letter cannot be grounded in anything.
+    CV'ler yalnızca No. 200'den itibaren var; altında ne CV ne de kaydedilmiş ilan metni
+    tutuldu, yani mektup hiçbir şeye dayandırılamaz.
     """
     cv_path = settings.markdown_dir / f"cv_{cv_no}.md"
     if not cv_path.exists():
@@ -68,16 +68,16 @@ def _load_cv(cv_no: int) -> str:
     return cv_md
 
 
-# Turkish dative suffix ("-a"/"-e", with a "y" buffer after a vowel), chosen by the
-# last vowel of the word. A fixed suffix would be wrong for most of the cities that
-# actually occur: İstanbul'a, Ankara'ya, İzmir'e, Gaziantep'e.
+# Türkçe yönelme hâli eki ("-a"/"-e", ünlüden sonra "y" kaynaştırmasıyla), kelimenin son
+# ünlüsüne göre seçilir. Sabit bir ek, gerçekte geçen şehirlerin çoğu için yanlış olurdu:
+# İstanbul'a, Ankara'ya, İzmir'e, Gaziantep'e.
 _TR_BACK_VOWELS = "aıouâû"
 _TR_FRONT_VOWELS = "eiöü"
 _TR_VOWELS = _TR_BACK_VOWELS + _TR_FRONT_VOWELS
 
 
 def _tr_dative(name: str) -> str:
-    """Proper noun + Turkish dative, e.g. "İstanbul" -> "İstanbul'a", "Ankara" -> "Ankara'ya"."""
+    """Özel ad + Türkçe yönelme eki, ör. "İstanbul" -> "İstanbul'a", "Ankara" -> "Ankara'ya"."""
     lowered = name.lower()
     last_vowel = next((ch for ch in reversed(lowered) if ch in _TR_VOWELS), "")
     suffix = "a" if last_vowel in _TR_BACK_VOWELS else "e"
@@ -85,9 +85,9 @@ def _tr_dative(name: str) -> str:
     return f"{name}'{buffer}{suffix}"
 
 
-# The relocation sentence, per language. Turkish letters get a Turkish sentence: an
-# English one dropped into an otherwise-Turkish letter reads as a copy-paste artifact
-# to the (Turkish) employer reading it.
+# Relocation cümlesi, dil başına. Türkçe mektuplar Türkçe bir cümle alır: başka her yeri Türkçe
+# olan bir mektuba bırakılmış İngilizce bir cümle, onu okuyan (Türk) işverene kopyala-yapıştır
+# artığı gibi okunur.
 _RELOCATION_BASE = {
     "en": BASE_RELOCATION_SENTENCE,
     "tr": "Relokasyona ve ofisten veya hibrit çalışmaya açığım.",
@@ -101,12 +101,12 @@ def _relocation_city_line(city: str, lang: str) -> str:
 
 
 def _relocation_line(work_mode: str, city: str, lang: str) -> str:
-    """The relocation sentence to put in the letter, or "" to leave it out.
+    """Mektuba konacak relocation cümlesi, ya da hiç konmayacaksa "".
 
-    Mirrors generator._relocation_instruction's three branches, and the sheet data
-    says that is the right call here too: for on-site/hybrid rows column F is always
-    a real city (İstanbul/Ankara/İzmir/Gaziantep), while the "Türkiye"/"EMEA" values
-    only ever appear on remote or blank-work-mode rows — where no city is printed.
+    cv_output.relocation_instruction'ın üç dalını yansıtır ve sheet verisi burada da bunun
+    doğru karar olduğunu söylüyor: ofisten/hibrit satırlarda F sütunu her zaman gerçek bir
+    şehir (İstanbul/Ankara/İzmir/Gaziantep), "Türkiye"/"EMEA" değerleri ise yalnızca remote
+    ya da çalışma şekli boş satırlarda görünüyor — orada şehir yazılmıyor.
     """
     wm = work_mode.strip().lower()
     city = city.strip()
@@ -131,7 +131,7 @@ def _relocation_rule(line: str) -> str:
 
 
 def _extract_letter(full_response: str) -> str:
-    """Pull the letter out of <LETTER_START>..<LETTER_END>, tolerating a stray fence."""
+    """Mektubu <LETTER_START>..<LETTER_END> arasından çıkarır; başıboş bir kod bloğunu tolere eder."""
     m = _LETTER_RE.search(full_response)
     body = m.group(1) if m else full_response
     letter = strip_fence(body)
@@ -141,10 +141,10 @@ def _extract_letter(full_response: str) -> str:
 
 
 def _write(path: Path, cv_no: int, lang: str, letter: str) -> None:
-    """Write atomically (temp + replace) so a concurrent reader never sees a half file.
+    """Atomik yazar (geçici dosya + replace), böylece eşzamanlı bir okuyucu asla yarım dosya görmez.
 
-    The letter is read by a second process (the API serves what the CLI wrote), which
-    is why this follows summary_api._save_cache rather than pipeline._save_outputs.
+    Mektup ikinci bir süreç tarafından okunur (API, agent'ın yazdığını sunar); bu yüzden
+    summary_api._save_cache'in yolunu izler.
     """
     stamp = datetime.date.today().isoformat()
     header = f"<!-- cv_no: {cv_no} | lang: {lang} | model: {settings.cover_letter_model} | {stamp} -->"
@@ -155,10 +155,10 @@ def _write(path: Path, cv_no: int, lang: str, letter: str) -> None:
 
 
 def _read_letter(path: Path) -> str:
-    """The letter body, without the bookkeeping header _write adds.
+    """Mektup gövdesi, _write'ın eklediği kayıt başlığı olmadan.
 
-    The header is a disk-only detail: every caller wants text the user can paste
-    straight into an application form.
+    Başlık yalnızca diske ait bir ayrıntı: her çağıran, kullanıcının doğrudan başvuru formuna
+    yapıştırabileceği metni ister.
     """
     return _META_RE.sub("", path.read_text(encoding="utf-8"), count=1).strip()
 
@@ -186,8 +186,8 @@ def letter_inputs(cv_no: int, lang: str, row: Row | None = None) -> dict:
     company = row.get(COL_COMPANY)
     job_title = row.get(COL_POZISYON)
     if not company or not job_title:
-        # A letter with the wrong (or a missing) company name is worthless, and unlike
-        # the CV there is nothing safe to fall back on. Say so instead of guessing.
+        # Yanlış (ya da eksik) şirket adıyla bir mektup değersizdir ve CV'nin aksine güvenle düşülecek
+        # bir şey yok. Tahmin etmek yerine bunu söyle.
         raise ValueError(
             f"CV {cv_no}: sheet satır {row.number}'de şirket (J) veya pozisyon (L) boş — "
             f"mektup üretilemez. Önce o hücreleri doldurun."
@@ -237,13 +237,14 @@ def get_or_create(
     force: bool = False,
     row: Row | None = None,
 ) -> tuple[str, bool]:
-    """Return (letter, created) — the letter body only, ready to paste.
+    """(letter, created) döndürür — yalnızca mektup gövdesi, yapıştırmaya hazır.
 
-    created=False means it came off disk and no model call was made. Pass `row` when
-    the caller already has it (the API does) to skip a second sheet download.
+    created=False, mektubun diskten geldiği ve model çağrısı yapılmadığı anlamına gelir.
+    Çağıran zaten satıra sahipse (API öyle) ikinci bir sheet indirmesini atlamak için `row`
+    geçir.
 
-    Raises FileNotFoundError / ValueError with user-facing Turkish messages; callers
-    map those to a 404.
+    Kullanıcıya yönelik Türkçe mesajlarla FileNotFoundError / ValueError fırlatır; çağıranlar
+    bunları 404'e eşler. Agent çalışıp dosya üretmezse RuntimeError fırlatır.
     """
     if lang not in LANGS:
         raise ValueError(f"Bilinmeyen dil: {lang!r} (geçerli: {', '.join(LANGS)})")

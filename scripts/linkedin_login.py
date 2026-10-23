@@ -1,12 +1,15 @@
-"""One-time helper: open a real browser, let the user log in to LinkedIn,
-then save the session (cookies + local storage) so the scraper can read
-authenticated job pages.
+"""Tek seferlik yardımcı (ARTIK KULLANILMIYOR): gerçek bir tarayıcı açar, kullanıcı LinkedIn'e
+giriş yapar, sonra oturumu (çerezler + local storage) kaydeder.
 
-Usage:
+UYARI: bu dosyanın ürettiği oturumu hiçbir otomatik tarayıcıya bağlama. Bir kez bağlandı ve
+LinkedIn hesabı haftalarca bütün oturumları kapattı (bkz. scraper.py). Scraper yalnızca
+misafir görünümünü okur; bu çıktıyı tüketen hiçbir şey yok.
+
+Kullanım:
     python scripts/linkedin_login.py
 
-A Chromium window opens at LinkedIn. Log in, then press ENTER in the terminal.
-The session is saved to credentials/linkedin_state.json (gitignored).
+LinkedIn'de bir Chromium penceresi açılır. Giriş yap, sonra terminalde ENTER'a bas.
+Oturum credentials/linkedin_state.json'a kaydedilir (gitignore'da).
 """
 from __future__ import annotations
 

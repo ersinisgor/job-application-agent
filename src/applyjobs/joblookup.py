@@ -1,12 +1,12 @@
-"""Find a job's sheet row, and read/stage its job description, by CV No or job id.
+"""Bir ilanın sheet satırını bulur ve ilan metnini CV No'ya ya da ilan no'suna göre okur/kaydeder.
 
-Shared by the CV poller (pipeline), the cover-letter feature (cover_letter,
-summary_api) and the panel's "Ekle" button (summary_api -> /add-job).
+CV agent'larının MCP sunucusu (mcp_server), mektup özelliği (cover_letter, summary_api) ve
+panelin "Ekle" butonu (summary_api -> /add-job) tarafından paylaşılır.
 
-IMPORTANT: this module must never import pipeline/scraper/huntr. Those pull in
-Playwright at module scope, and summary_api imports this — the API process must
-stay incapable of touching LinkedIn (see CLAUDE.md, "Do not automate the user's
-LinkedIn session"). Only config + sheets belong here.
+ÖNEMLİ: bu modül asla pipeline/scraper/huntr import etmemeli. Onlar Playwright'ı modül
+düzeyinde çeker ve summary_api bunu import eder — API süreci LinkedIn'e dokunamaz kalmalı
+(bkz. CLAUDE.md, "Kullanıcının LinkedIn oturumunu otomatikleştirme"). Buraya yalnızca
+config + sheets ait.
 """
 from __future__ import annotations
 
@@ -25,18 +25,18 @@ from .sheets import Row, SheetsClient
 
 logger = logging.getLogger("applyjobs.joblookup")
 
-# LinkedIn job id inside a link, e.g. .../jobs/view/4427414076/... -> 4427414076.
-# Deliberately duplicates pipeline._job_key's regex rather than importing it: that
-# function returns a prefixed "li:<id>" key for the poller's de-duplication, and it
-# lives behind the Playwright import chain. KEEP THE PATTERN IN SYNC with pipeline.py.
+# Bir linkin içindeki LinkedIn ilan no'su, ör. .../jobs/view/4427414076/... -> 4427414076.
+# pipeline._job_key'in regex'ini import etmek yerine bilerek kopyalar: o fonksiyon poller'ın
+# tekrar kontrolü için önekli bir "li:<id>" anahtarı döndürür ve Playwright import zincirinin
+# arkasında yaşar. DESENİ pipeline.py İLE SENKRON TUT.
 _LINKEDIN_ID_RE = re.compile(r"/jobs/view/(\d+)")
 
 
 def linkedin_job_id(link: str) -> str:
-    """Bare LinkedIn job id from a sheet link, e.g. "4427414076". "" if not LinkedIn.
+    """Bir sheet linkinden yalın LinkedIn ilan no'su, ör. "4427414076". LinkedIn değilse "".
 
-    Bare (no "li:" prefix) so it matches what the extension's getCurrentJobId()
-    sends, with no translation at the API boundary.
+    Yalın ("li:" öneki yok), böylece extension'ın getCurrentJobId()'sinin gönderdiğiyle
+    API sınırında hiçbir çeviri olmadan eşleşir.
     """
     if not link:
         return ""
@@ -45,7 +45,7 @@ def linkedin_job_id(link: str) -> str:
 
 
 def find_row_for_cv_no(rows: list[Row], cv_no: int) -> Row | None:
-    """The row whose CV No (column N) is exactly cv_no. None if absent."""
+    """CV No'su (N sütunu) tam olarak cv_no olan satır. Yoksa None."""
     for r in rows:
         if SheetsClient._as_int(r.cv_no) == cv_no:
             return r
@@ -53,7 +53,7 @@ def find_row_for_cv_no(rows: list[Row], cv_no: int) -> Row | None:
 
 
 def targets_in_range(rows: list[Row], start: int, end: int) -> list[tuple[int, Row]]:
-    """(cv_no, row) pairs whose numeric CV No is in [start, end], sorted by cv_no."""
+    """Sayısal CV No'su [start, end] aralığında olan (cv_no, row) çiftleri, cv_no'ya göre sıralı."""
     targets = [
         (n, r)
         for r in rows
@@ -64,7 +64,7 @@ def targets_in_range(rows: list[Row], start: int, end: int) -> list[tuple[int, R
 
 
 def build_job_index(rows: list[Row]) -> dict[str, int]:
-    """Bare LinkedIn job id -> CV No, for every row with a link and a numeric N."""
+    """Yalın LinkedIn ilan no'su -> CV No; linki ve sayısal N'si olan her satır için."""
     index: dict[str, int] = {}
     for r in rows:
         job_id = linkedin_job_id(r.link)
@@ -75,11 +75,11 @@ def build_job_index(rows: list[Row]) -> dict[str, int]:
 
 
 def build_link_index(rows: list[Row]) -> dict[str, Row]:
-    """Bare LinkedIn job id -> the FIRST row carrying that link, CV No or not.
+    """Yalın LinkedIn ilan no'su -> o linki taşıyan İLK satır, CV No'su olsun ya da olmasın.
 
-    build_job_index() only sees rows that already have a numeric N, so it cannot answer
-    "is this posting already in the sheet, still waiting for its CV?" — which is exactly
-    the duplicate check /add-job needs. First row wins, like sync_huntr_to_sheet.
+    build_job_index() yalnızca zaten sayısal N'si olan satırları görür; bu yüzden "bu ilan
+    zaten sheet'te mi, hâlâ CV'sini mi bekliyor?" sorusunu cevaplayamaz — /add-job'un
+    ihtiyaç duyduğu tekrar kontrolü tam olarak budur. sync_huntr_to_sheet gibi ilk satır kazanır.
     """
     index: dict[str, Row] = {}
     for r in rows:
@@ -90,10 +90,10 @@ def build_link_index(rows: list[Row]) -> dict[str, Row]:
 
 
 def load_saved_jd(cv_no: int) -> str:
-    """The job description stored when the CV was first made, stripped.
+    """CV ilk üretildiğinde kaydedilen ilan metni, kırpılmış.
 
-    Re-using it is what makes regeneration and on-demand cover letters robust against
-    expired/removed LinkedIn postings.
+    Yeniden üretimi ve istendiğinde üretilen mektupları süresi geçmiş/kaldırılmış LinkedIn
+    ilanlarına karşı sağlam yapan, bunun yeniden kullanılmasıdır.
     """
     jd_path = settings.job_description_dir / f"job_description_{cv_no}.md"
     if not jd_path.exists():
@@ -104,18 +104,18 @@ def load_saved_jd(cv_no: int) -> str:
     return job_description
 
 
-# --- Descriptions staged by the panel's "Ekle" button ----------------------------
-# The panel already reads the posting to summarize it, so /add-job stages that text next
-# to the new row. The poller's guest-view scrape stays the PRIMARY source; the staged
-# copy is only read when that scrape fails, and is deleted once the CV exists (from then
-# on job_description_<no>.md is the record regenerate/cover-letter use).
+# --- Panelin "Ekle" butonunun kaydettiği ilan metinleri ----------------------------
+# Panel ilanı özetlemek için zaten okuyor; bu yüzden /add-job o metni yeni satırın yanına
+# kaydeder. Misafir görünümlü scrape BİRİNCİL kaynak olarak kalır; kaydedilen kopya yalnızca o
+# scrape başarısız olursa (ve --allow-staged istenirse) okunur, CV oluşunca da silinir (o andan
+# sonra yeniden üretimin/mektubun kullandığı kayıt job_description_<no>.md'dir).
 
 
 def pending_jd_path(job_id: str) -> Path:
-    """state/pending_jd/<job_id>.md for a bare LinkedIn job id.
+    """Yalın bir LinkedIn ilan no'su için state/pending_jd/<job_id>.md.
 
-    Rejects anything non-numeric: job_id arrives over HTTP from the extension, so this
-    is the path-traversal guard as much as a sanity check.
+    Sayısal olmayan her şeyi reddeder: job_id extension'dan HTTP üzerinden gelir; yani bu bir
+    akıl sağlığı kontrolü olduğu kadar yol geçişi (path traversal) korumasıdır da.
     """
     if not job_id or not job_id.isdigit():
         raise ValueError(f"Not a LinkedIn job id: {job_id!r}")
@@ -123,9 +123,9 @@ def pending_jd_path(job_id: str) -> Path:
 
 
 def save_pending_jd(job_id: str, text: str) -> bool:
-    """Stage the panel's posting text. False (and nothing written) if it is too short.
+    """Panelin ilan metnini kaydeder. Çok kısaysa False (ve hiçbir şey yazılmaz).
 
-    Atomic (tmp + replace) so the poller can never read a half-written file.
+    Atomik (tmp + replace), böylece okuyan taraf asla yarım yazılmış bir dosya görmez.
     """
     text = (text or "").strip()
     if len(text) < PENDING_JD_MIN_CHARS:
@@ -139,10 +139,10 @@ def save_pending_jd(job_id: str, text: str) -> bool:
 
 
 def load_pending_jd(job_id: str) -> str:
-    """The staged text, or "" when absent/too short/unreadable.
+    """Kaydedilen metin; yoksa/çok kısaysa/okunamıyorsa "".
 
-    Never raises: this is a fallback, so it must not turn a scrape failure into a
-    different failure.
+    Asla hata fırlatmaz: bu bir yedek yol, bir scrape hatasını başka bir hataya
+    dönüştürmemeli.
     """
     try:
         text = pending_jd_path(job_id).read_text(encoding="utf-8").strip()
@@ -152,7 +152,7 @@ def load_pending_jd(job_id: str) -> str:
 
 
 def clear_pending_jd(job_id: str) -> None:
-    """Drop the staged text once its CV has been written."""
+    """CV'si yazılınca kaydedilen metni siler."""
     try:
         pending_jd_path(job_id).unlink(missing_ok=True)
     except (OSError, ValueError):
