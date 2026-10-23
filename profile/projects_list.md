@@ -284,13 +284,27 @@ A production-style Retrieval-Augmented Generation platform that turns documents 
 
 ---
 
-### 11. Job Application Agent (AI CV Automation + LinkedIn Assistant)
+### 11. Job Application Agent (Multi-Agent CV Automation on Claude Code + LinkedIn Assistant)
 
 **Explanation**
 
-A Python automation platform that runs a whole job search end-to-end. A background poller watches a job-application spreadsheet, scrapes each new posting, and generates an ATS-optimized CV per job with Claude, rendering it from Markdown into a .docx template and exporting it to Google Docs and PDF. In parallel, a Chrome MV3 extension backed by a FastAPI service reads the LinkedIn posting the user is viewing and shows a short Turkish summary, the required stack, and a technology-fit score that is computed deterministically in Python instead of being left to the model. The panel can also add the job to the spreadsheet with one click and generate a cover letter on demand. Two processes share one workbook, so the writes are serialized with a cross-process file lock, and results are cached both in memory and on disk with a version stamp that invalidates them when the scoring rules change.
+An AI agent system that runs a whole job search end-to-end, built on Claude Code as the agent runtime. When the user marks a job for CV generation in a job-application spreadsheet, a headless orchestrator agent (launched from Python with `claude -p`) delegates the posting to specialised subagents: a CV writer that produces an ATS-optimized, per-posting English CV, an optional reviewer that runs a second QA pass, and a cover-letter writer. The agents reach the outside world only through a custom Model Context Protocol (MCP) server of deterministic Python tools that scrape the posting, reserve the CV number, lock and update the spreadsheet, and render the CV from Markdown into a .docx template, a Google Doc and a PDF. The design keeps invariants in tools and reasoning in agents: guardrails include least-privilege tool permissions per agent, a PreToolUse hook that blocks access to secrets, posting text treated as untrusted data (prompt-injection defence), an honesty contract shipped as an Agent Skill, and a PostToolUse hook that validates every CV the agent writes so it self-corrects before export. In parallel, a Chrome MV3 extension backed by a FastAPI service reads the LinkedIn posting the user is viewing and shows a short Turkish summary from Claude Haiku (with prompt caching and Pydantic-validated JSON output), the required stack, and a technology-fit score that is computed deterministically in Python instead of being left to the model; the panel can add the job to the spreadsheet with one click and trigger the cover-letter agent. The project was migrated from a single-prompt Anthropic API pipeline to this multi-agent architecture without changing its output format.
 
 **Technologies Used**
+
+**AI & Agents**
+
+* Claude Code (headless mode)
+* Claude Code Subagents
+* Agent Skills
+* Claude Code Hooks
+* Model Context Protocol (MCP)
+* Anthropic Claude API
+* Multi-Agent Orchestration
+* Prompt Engineering
+* Context Engineering
+* Prompt Caching
+* Guardrails & Output Validation
 
 **Backend**
 
@@ -298,7 +312,6 @@ A Python automation platform that runs a whole job search end-to-end. A backgrou
 * FastAPI
 * Uvicorn
 * Pydantic
-* Anthropic Claude API
 * Playwright
 * BeautifulSoup4
 * openpyxl
@@ -306,7 +319,6 @@ A Python automation platform that runs a whole job search end-to-end. A backgrou
 * Google Drive & Docs API
 * OAuth 2.0 / Service Account
 * REST API
-* Prompt Engineering
 * File Locking & Concurrency
 * Caching (LRU + disk)
 
