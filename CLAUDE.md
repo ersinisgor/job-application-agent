@@ -42,7 +42,7 @@ kodundadır; agent'lar onları değiştiremez.
 | `.claude/hooks/` | `guard_secrets.py` (gizli dosya / LinkedIn oturumu), `check_cv_output.py` (CV biçimi) |
 | `.claude/settings.json`, `.mcp.json` | başsız oturumun izinleri, hook'lar, cv-tools sunucusu |
 | `profile/` | `cv_base.md`, `projects.md` — adayın gerçeklerinin TEK kaynağı (İngilizce veri) |
-| `templates/cv_template.docx` | Google Doc/PDF şablonu (ATS düzeltmeli); `cv_template_eski.docx` eski tasarımın yedeği, `CV_TEMPLATE` ile seçilir |
+| `templates/cv_template.docx` | Google Doc/PDF şablonu (ATS düzeltmeli + kullanıcı ayarı); yedekler `cv_template_ats_v1.docx` (ayar öncesi) ve `cv_template_eski.docx` (ATS öncesi), `CV_TEMPLATE` ile seçilir |
 | `prompts/ozet_sistem.md` | panel özetinin Türkçe system prompt'u |
 | `src/applyjobs/` | deterministik araçlar: `mcp_server`, `agent_runner`, `pipeline`, `sheets`, `scraper`, `docx_builder`, `drive_docs`, `pdf_check`, `cv_output`, `cover_letter`, `joblookup`, `summary_api` |
 | `outputs/` (gitignore) | `cv/markdown`, `cv/pdf`, `cv/docx`, `cv/analysis`, `job_descriptions`, `cover_letters` |
@@ -110,7 +110,7 @@ dönüşümden geçir ve `scripts/check_pdfs.py` ile denetle (hata = 0). Tek say
 - `prompts/ozet_sistem.md`, `JobSummary` şeması ya da `profile/*` değişince `summary_api._CACHE_VERSION`'ı artır
 - `pipeline._LINKEDIN_ID_RE` ↔ `joblookup._LINKEDIN_ID_RE`
 - Şablonların bölüm başlıkları ↔ `docx_builder._find_header` çağrıları ↔ `pdf_check.HEADINGS`
-  (her iki şablon da çalışır kalmalı: `cv_template.docx` ve `cv_template_eski.docx`)
+  (üç şablon da çalışır kalmalı: `cv_template.docx`, `cv_template_ats_v1.docx`, `cv_template_eski.docx`)
 - `profile/`, `.claude/`, `prompts/` altındaki Markdown **veridir**: hiçbir biçimlendirici dokunmamalı
   (`*` → `-` dönüşümü bir kez bütün maddeleri ayrıştırmadan düşürdü)
 - `sheets` kilidi yeniden girişli değil: bir `@_locked` metodu başka birinin içinden çağırma

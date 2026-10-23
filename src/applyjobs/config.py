@@ -31,7 +31,8 @@ CV_BASE_FILE = PROFILE_DIR / "cv_base.md"
 PROJECTS_LIST_FILE = PROFILE_DIR / "projects.md"
 
 # Yapılandırma dosyası: Google Docs çıktısı için .docx şablonu. CV_TEMPLATE başka bir şablonu
-# seçer; cv_template_eski.docx 2026-10-23 öncesinin (ATS düzeltmeleri öncesi) birebir tasarımıdır.
+# seçer: cv_template_ats_v1.docx kullanıcı ayarından önceki ATS sürümü, cv_template_eski.docx
+# 2026-10-23 öncesinin (ATS düzeltmeleri öncesi) birebir tasarımıdır.
 CV_TEMPLATE_FILE = TEMPLATES_DIR / (os.getenv("CV_TEMPLATE") or "cv_template.docx")
 
 # Kimlik bilgisi dosyaları

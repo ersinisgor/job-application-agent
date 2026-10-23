@@ -199,6 +199,9 @@ yüksekliği ~12.3pt). İçerik 1. sayfada 781.5pt'ye kadar iner; `cv_base.md` 7
   Ölçüm: `cv_base.md` 758.0pt (eski şablon 756.9), cv_559 769.7 (769.2); eski şablonda sınıra dayanan
   324/348/362/371 yenisinde de tek sayfa (781.3pt). Agent kuralı bilerek **2 satır** kaldı: eski
   şablona dönüldüğünde de her CV sığsın.
+- **Kullanıcı ayarı (aynı gün, cv_560'ın Doc'undan):** üst blok 6.5pt uzadı (iki satırlı iletişim,
+  12pt rol satırı), 9pt'ye inen 6 başlık daha fazlasını geri verdi. Ölçüm: `cv_base.md` 756.4pt,
+  cv_560 768.1, 324/348/362/371 779.7 — pay biraz büyüdü, kural yine 2 satır.
 - **A4 denendi, net kayıp.** Şablon -270 twip girintiyle metni kâğıt kenarına 5.4 mm yaklaştırıyor;
   A4'te aynı genişliği korumak 1.6 mm kenar ister. Genişlik 16.7pt daralınca 4–5 madde bir satır
   daha kırılıyor ve kazanılan ~50pt'yi yiyor.
@@ -216,15 +219,36 @@ yüksekliği ~12.3pt). İçerik 1. sayfada 781.5pt'ye kadar iner; `cv_base.md` 7
 ATS PDF'in görüntüsünü değil **metin katmanını** okur. Google'ın PDF'i sağlam bir temel: görüntü
 değil gerçek metin, fontlar gömülü ve Unicode eşlemeli, tek sütun, Tagged, header/footer boş. Sorunlar
 şablondaydı; `templates/cv_template.docx` bunlara göre düzeltildi (tek seferlik bir python-docx
-düzenlemesi; değişikliklerin tamamı aşağıdaki tabloda). Eski tasarım `templates/cv_template_eski.docx`'te
-bayt bayt duruyor.
+düzenlemesi; değişikliklerin tamamı aşağıdaki tabloda), sonra kullanıcının ayarıyla son hâlini aldı.
+Üç şablon var, `CV_TEMPLATE` ile seçilir:
+
+| Dosya | Ne |
+|---|---|
+| `cv_template.docx` | varsayılan: ATS düzeltmeleri + kullanıcının cv_560 üzerindeki ayarı |
+| `cv_template_ats_v1.docx` | ATS düzeltmeleri, kullanıcı ayarından önce (commit 5fc20f4'teki şablon) |
+| `cv_template_eski.docx` | ATS düzeltmeleri öncesinin birebir tasarımı |
+
+**Kullanıcı ayarı (2026-10-23).** Kullanıcı cv_560'ı Google Docs'ta düzenledi. Değerler, Doc'un ilk
+ve son revizyonunun Google DOCX dışa aktarımları paragraf paragraf karşılaştırılarak çıkarıldı;
+metinler, maddeler ve kenar boşlukları değişmemişti. Şablona uygulandıktan sonra aynı Markdown'dan
+basılan PDF, kullanıcının PDF'iyle 61 satırın hepsinde konum olarak ve 100 dpi görüntüde birebir aynı.
+
+| Öğe | ATS v1 | Kullanıcı ayarı |
+|---|---|---|
+| Fotoğraf | 45.4pt; soldan 40.6, üstten 9.4pt | 53.5pt (679503 EMU); soldan 15.9, üstten 10.6pt |
+| Rol satırı | varsayılan 11pt, satır 0.9 | 12pt, satır 1.0 |
+| İletişim | tek satır, sağa yaslı, 8.5pt; üstte ve altta boşluk paragrafı | iki ortalı satır, 10pt: telefon \| e-posta \| konum / LinkedIn \| GitHub \| `https://ersinisgor.netlify.app`; boşluk paragrafları yok (ikinci satır 0.7 aralıklı, altındaki boşluğun yerini tutuyor) |
+| 6 bölüm başlığı | 10pt | 9pt |
+
+`top[1]` (builder'ın rol satırını bulduğu paragraf) değişmedi: SUMMARY'den önceki boş olmayan
+paragraflar artık ad, rol, iletişim-1, iletişim-2.
 
 | Sorun (eski şablon) | Neden riskli | Yeni şablon |
 |---|---|---|
 | `SUMMARY____…` alt çizgi run'ı | `_` kelime karakteri: başlık tek token, bölüm algılanmaz | paragraf alt kenarlığı (`w:pBdr`, 76A5AF) |
 | Eğitim 2×2 tablo | `-layout` çıkarımı iki dereceyi tek satırda birleştiriyor; Greenhouse tabloyu parse hata nedeni sayıyor | 4 tek sütun paragraf, ters kronolojik |
-| `LinkedIn` / `Github` link metni | parser link metnini saklar, URL'yi değil | `linkedin.com/in/…`, `github.com/…` görünür; portfolyo `Portfolio` kaldı (tam adresle satır fotoğrafın altına uzanıyordu) |
-| 5 yüzen ikon (yazının arkasında) | grafik; konumları metne çakılı | silindi; fotoğraf kaldı (1024 → 320 px, PDF 1 MB → ~210 KB; boyut %90 = 45.4pt, merkez sabit: alt kenarı 59.8 → 54.7pt, daha küçük iletişim satırıyla yukarı kayan SUMMARY'ye değiyordu) |
+| `LinkedIn` / `Github` link metni | parser link metnini saklar, URL'yi değil | `linkedin.com/in/…`, `github.com/…` görünür; v1'de portfolyo `Portfolio` kaldı (tek satırda tam adres fotoğrafın altına uzanıyordu), kullanıcı ayarında iletişim iki satır ve portfolyo tam URL |
+| 5 yüzen ikon (yazının arkasında) | grafik; konumları metne çakılı | silindi; fotoğraf kaldı (1024 → 320 px, PDF 1 MB → ~210 KB). Boyutu ve konumu kullanıcı ayarında |
 | `Nov 2024 – Present`, `Jun – Aug 2025`, `2023–2024` | en-dash'i bölmeyen parser tarihi düşürür (örnek projede Workday'de belgelenmiş); `Jun` yılsız | ASCII `-`, `Jun 2025 - Aug 2025` |
 | `Master’s` (U+2019) | düz `'` ile aranan derece eşleşmeyebilir | `Master's`, `Bachelor's` |
 | Eski kariyer tarihsiz | iş kaydı çıkmaz | `PREVIOUS EXPERIENCE (… \| 2010 - 2023)` |
@@ -246,7 +270,8 @@ Ashby, Workday) DOCX ile neredeyse eşit okunuyor. `outputs/cv/docx/cv_<no>.docx
 fontlar gömülü) Word isteyen ilanlar ve katı ya da eski portallar (Workday, Taleo, iCIMS) için.
 TXT üretilmiyor: yalnızca "yapıştır" alanlarına yarar.
 
-**Eski tasarıma dönüş:** `.env`'e `CV_TEMPLATE=cv_template_eski.docx`, poller'ı yeniden başlat. Var
+**Eski tasarıma dönüş:** `.env`'e `CV_TEMPLATE=cv_template_eski.docx` (ya da kullanıcı ayarından önceki
+ATS sürümü için `cv_template_ats_v1.docx`), poller'ı yeniden başlat. Var
 olan CV'leri o tasarımla yeniden basmak için `scripts/rebuild_pdf.py --from N --to M` (model çağrısı
 yok; aynı adlı Doc güncellenir, eskisi Drive geçmişinde kalır). Doğrulandı: eski şablonla basılan
 cv_559 PDF'i, orijinaliyle metin ve görüntü olarak birebir aynı.
