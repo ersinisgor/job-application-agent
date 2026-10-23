@@ -7,6 +7,7 @@ kimliğinin üzerine yeniden yükleriz. Atanan CV numarası N sütununa geri yaz
 from __future__ import annotations
 
 import datetime
+from copy import copy
 import fcntl
 import functools
 import http.client
@@ -56,6 +57,10 @@ COL_LANGUAGES = "Q"   # job's top two priority programming languages ("Python, J
 CV_NO_COL_INDEX = COLUMNS.index(COL_CV_NO) + 1        # = 14
 MATCH_RATE_COL_INDEX = COLUMNS.index(COL_MATCH_RATE) + 1  # = 16
 LANGUAGES_COL_INDEX = COLUMNS.index(COL_LANGUAGES) + 1    # = 17
+
+# E (tarih) sütununun sheet'teki formatı: gerçek tarih değeri + bu biçim. "General" bırakılırsa
+# hücre 46318 gibi bir seri numarası olarak görünür.
+DATE_FORMAT = "dd.MM.yyyy"
 
 # Diller hücresinin (Q) yazı boyutu (punto) — kullanıcı küçük istiyor (7pt).
 LANGUAGES_FONT_SIZE = 7
@@ -408,6 +413,56 @@ class SheetsClient:
                 last = r
         return last
 
+    def _style_reference_row(self, ws, before: int) -> int | None:
+        """Yeni satırların biçim kaynağı: tablonun "normal" son satırı.
+
+        Normal = gerçek bir tarihi (E) ve sayısal bir CV No'su (N) olan en yakın satır. Boş
+        şablon satırları (altta, 770-780 gibi) bilerek seçilmez: onların E'si düz metin, J/K'sı
+        boş, yani gerçek bir satırın biçimini taşımazlar. Biçimi sabit sayılarla yazmak yerine
+        buradan kopyalarız; böylece tablonun kendi ayrıntıları (B 7pt, C 9pt, Q 7pt, E'nin
+        dd.MM.yyyy formatı...) kullanıcı değiştirdikçe kendiliğinden izlenir.
+        """
+        for rr in range(min(before, ws.max_row), 1, -1):
+            if (
+                isinstance(ws.cell(row=rr, column=self._col("E")).value, datetime.datetime)
+                and self._as_int(_cell_to_str(ws.cell(row=rr, column=CV_NO_COL_INDEX).value))
+                is not None
+            ):
+                return rr
+        return None
+
+    def _copy_row_style(self, ws, src_row: int, dst_row: int) -> None:
+        """A..Q hücrelerinin stilini src_row'dan dst_row'a kopyalar (değerlere dokunmaz)."""
+        for col in range(1, len(COLUMNS) + 1):
+            src = ws.cell(row=src_row, column=col)
+            dst = ws.cell(row=dst_row, column=col)
+            dst.font = copy(src.font)
+            dst.alignment = copy(src.alignment)
+            dst.border = copy(src.border)
+            dst.fill = copy(src.fill)
+            dst.number_format = src.number_format
+            dst.protection = copy(src.protection)
+        height = ws.row_dimensions[src_row].height
+        if height:
+            ws.row_dimensions[dst_row].height = height
+
+    def _format_new_row(self, ws, row: int, ref_row: int | None) -> None:
+        """Yeni (ya da bozuk biçimli) bir satıra tablonun asıl biçimini verir.
+
+        Köprü olmayan J düz kalır: referans satırın J'si mavi altı çizili bir köprüdür ama yeni
+        satırda şirket sayfasının URL'si henüz yok (panel bilmiyor); URL, CV üretilirken
+        _fill_page_fields'te gelir ve o zaman _link_font uygulanır. Köprü gibi görünen ama
+        tıklanmayan bir hücre yanıltıcı olurdu.
+        """
+        if ref_row is not None:
+            self._copy_row_style(ws, ref_row, row)
+        e_cell = ws.cell(row=row, column=self._col("E"))
+        if e_cell.number_format == "General":
+            e_cell.number_format = DATE_FORMAT
+        j_cell = ws.cell(row=row, column=self._col("J"))
+        if not j_cell.hyperlink:
+            j_cell.font = Font(name=j_cell.font.name, size=j_cell.font.sz or 10)
+
     def _set_link_cell(self, cell, url: str) -> None:
         """Tıklanabilir bir köprü hücresi yazar (mavi, altı çizili)."""
         cell.value = url
@@ -433,7 +488,7 @@ class SheetsClient:
             return []
         wb, ws = self._load_workbook()
         last = self._last_data_row(ws)
-        date_fmt = ws.cell(row=last, column=self._col("E")).number_format if last >= 2 else None
+        ref_row = self._style_reference_row(ws, last)
         # "No" (A) numaralandırmasını yukarıdaki en son sayısal değerden sürdür.
         last_a = None
         for rr in range(last, 1, -1):
@@ -449,10 +504,11 @@ class SheetsClient:
             if last_a is not None:
                 last_a += 1
                 ws.cell(row=r, column=self._col("A")).value = last_a
+            # Önce biçim, sonra değer: _format_new_row stili kopyalar, aşağıdaki yazımlar
+            # (tarih, link köprüsü) değerleri doldurur.
+            self._format_new_row(ws, r, ref_row)
             e_cell = ws.cell(row=r, column=self._col("E"))
             e_cell.value = today
-            if date_fmt:
-                e_cell.number_format = date_fmt
             ws.cell(row=r, column=self._col("I")).value = "İş"
             self._set_link_cell(ws.cell(row=r, column=self._col("K")), job.get("url", ""))
             # İlan No formülü: "/jobs/view/" ile sonraki "/" arasındaki no'yu çıkarır.
@@ -549,3 +605,29 @@ class SheetsClient:
         ws.cell(row=row_number, column=CV_NO_COL_INDEX).value = cv_no_marker
         _apply_dropdowns(ws)
         self._upload(wb)
+
+    @_locked
+    def reformat_rows(self, row_numbers: list[int]) -> list[int]:
+        """Biçimi bozuk yazılmış satırları tablonun asıl biçimine döndürür; değerlere dokunmaz.
+
+        Tek seferlik onarım içindir (eski append_job_rows satırlara stil vermiyordu). E'de
+        "General" biçimiyle takılı kalmış bir seri numarası (46318) gerçek tarihe çevrilir.
+        Yalnızca biçimi onarılan satır numaralarını döndürür. Tek indir-düzenle-yükle.
+        """
+        wb, ws = self._load_workbook()
+        ref_row = self._style_reference_row(ws, min(row_numbers) - 1)
+        if ref_row is None:
+            return []
+        fixed = []
+        for r in row_numbers:
+            e_cell = ws.cell(row=r, column=self._col("E"))
+            serial = e_cell.value if isinstance(e_cell.value, (int, float)) else None
+            self._format_new_row(ws, r, ref_row)
+            if serial:
+                # Excel seri numarası -> tarih (1899-12-30 tabanı, openpyxl ile aynı)
+                e_cell.value = datetime.datetime(1899, 12, 30) + datetime.timedelta(days=serial)
+            e_cell.number_format = DATE_FORMAT
+            fixed.append(r)
+        _apply_dropdowns(ws)
+        self._upload(wb)
+        return fixed

@@ -124,6 +124,14 @@ turlarda agent başlatma (main.py zaten başlatmıyor).
   bir çalışma kitabı yüklerdi. **`get_rows` bilerek kilitsiz** (saf okuma; Drive sürümleri atomik).
   `flock` yeniden girişli değil — bir `@_locked` metodu başka birinin içinden çağırma (120 sn sonra
   `SheetLockTimeout`).
+- **Yeni satırlara tablonun biçimi kopyalanır (`_style_reference_row` / `_copy_row_style`).** openpyxl
+  yeni bir hücreye yalnızca değer yazar; stil vermezsek satır varsayılan 11 punto çıkar ve E'ye
+  yazılan tarih, "son satırın" (boş şablon satırının) `General` formatını alıp `46318` gibi bir seri
+  numarası görünür (2026-10-23'te satır 781/782'de yaşandı). Biçim sabit sayılarla yazılmaz; en yakın
+  "normal" satırdan (gerçek tarihli E + sayısal N) kopyalanır, çünkü tablonun kendi ayrıntıları var
+  (B 7pt, C 9pt, Q 7pt, E `dd.MM.yyyy`). J köprüsüz kalır: şirket sayfasının URL'si ancak CV
+  üretilirken scrape'ten gelir, o zaman `_link_font` uygulanır (köprü gibi görünüp tıklanmayan hücre
+  yanıltıcı olurdu). Bozuk satırlar için `SheetsClient.reformat_rows([...])`.
 - **`state/pending_jd/<job_id>.md` panelin kaydettiği ilan metni, isteğe bağlı yedek.** `/add-job`
   yazar (atomik, `PENDING_JD_MIN_CHARS = 200` tabanı). `_scrape_fields(row, scraper,
   allow_staged=True)` onu **yalnızca scrape hata verirse** okur, açıklama içeren bir `JobPage` kurar,
