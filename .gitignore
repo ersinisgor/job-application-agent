@@ -1,6 +1,10 @@
 # Secrets & credentials
 .env
+.env.bak*
 credentials/
+
+# Generated CVs, analyses, job descriptions and cover letters (personal data)
+outputs/
 
 # Local state (processed.json, last_cv_no, huntr_seen.json, ...)
 state/*

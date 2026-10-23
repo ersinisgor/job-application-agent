@@ -18,6 +18,8 @@ load_dotenv(PROJECT_ROOT / ".env")
 CONFIG_DIR = PROJECT_ROOT / "config"
 CREDENTIALS_DIR = PROJECT_ROOT / "credentials"
 STATE_DIR = PROJECT_ROOT / "state"
+# Generated CVs, analyses, job descriptions and cover letters (gitignored).
+OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 
 # Config asset files
 CV_BASE_FILE = CONFIG_DIR / "cv_base.md"
@@ -126,13 +128,14 @@ class Settings:
 
     @classmethod
     def load(cls) -> "Settings":
-        default_output = "~/Desktop/İş Arama/Job Applications/2026/CVs"
-        default_analysis = "~/Desktop/İş Arama/Job Applications/2026/CV_Analysis"
-        default_jd = "~/Desktop/İş Arama/Job Applications/2026/Job Description"
+        # Every generated file lives inside the project, under outputs/ (gitignored).
+        default_output = str(OUTPUTS_DIR / "cv")
+        default_analysis = str(OUTPUTS_DIR / "cv" / "analysis")
+        default_jd = str(OUTPUTS_DIR / "job_descriptions")
         # Shares a folder with the hand-made legacy letters (cover_letter_<no>_<be|fs>.docx,
         # up to No. 138). New files are cover_letter_<no>_<lang>.md — different suffix and
         # extension, so they coexist. Never glob this directory to find a letter.
-        default_cover = "~/Desktop/İş Arama/Job Applications/2026/Cover Letters"
+        default_cover = str(OUTPUTS_DIR / "cover_letters")
         return cls(
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
             claude_model=os.getenv("CLAUDE_MODEL", "claude-sonnet-4-6"),
@@ -168,12 +171,12 @@ class Settings:
     @property
     def markdown_dir(self) -> Path:
         """Where the Markdown CVs live (subfolder of the CVs output dir)."""
-        return self.output_dir / "Markdown"
+        return self.output_dir / "markdown"
 
     @property
     def pdf_dir(self) -> Path:
         """Where the CV PDFs (exported from the Google Docs) are downloaded."""
-        return self.output_dir / "PDFs"
+        return self.output_dir / "pdf"
 
     def validate(self) -> None:
         missing = []
