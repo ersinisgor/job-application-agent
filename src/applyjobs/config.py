@@ -30,8 +30,10 @@ OUTPUTS_DIR = PROJECT_ROOT / "outputs"
 CV_BASE_FILE = PROFILE_DIR / "cv_base.md"
 PROJECTS_LIST_FILE = PROFILE_DIR / "projects.md"
 
-# Yapılandırma dosyası: Google Docs çıktısı için .docx şablonu
-CV_TEMPLATE_FILE = TEMPLATES_DIR / "cv_template.docx"
+# Yapılandırma dosyası: Google Docs çıktısı için .docx şablonu. CV_TEMPLATE başka bir şablonu
+# seçer: cv_template_ats_v1.docx kullanıcı ayarından önceki ATS sürümü, cv_template_eski.docx
+# 2026-10-23 öncesinin (ATS düzeltmeleri öncesi) birebir tasarımıdır.
+CV_TEMPLATE_FILE = TEMPLATES_DIR / (os.getenv("CV_TEMPLATE") or "cv_template.docx")
 
 # Kimlik bilgisi dosyaları
 SERVICE_ACCOUNT_FILE = CREDENTIALS_DIR / "service_account.json"
@@ -184,6 +186,11 @@ class Settings:
         """Google Doc'lardan dışa aktarılan CV PDF'lerinin indirildiği yer."""
         return self.output_dir / "pdf"
 
+    @property
+    def docx_dir(self) -> Path:
+        """CV'lerin .docx kopyaları (Word isteyen ilanlar / Workday, Taleo, iCIMS portalları)."""
+        return self.output_dir / "docx"
+
     def validate(self) -> None:
         # ANTHROPIC_API_KEY burada aranmıyor: CV ve mektup artık Claude Code agent'larıyla
         # (abonelik girişiyle) üretiliyor. Anahtar sadece panel özeti için summary_api'de lazım.
@@ -205,6 +212,7 @@ class Settings:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.markdown_dir.mkdir(parents=True, exist_ok=True)
         self.pdf_dir.mkdir(parents=True, exist_ok=True)
+        self.docx_dir.mkdir(parents=True, exist_ok=True)
         self.analysis_dir.mkdir(parents=True, exist_ok=True)
         self.job_description_dir.mkdir(parents=True, exist_ok=True)
         self.cover_letter_dir.mkdir(parents=True, exist_ok=True)

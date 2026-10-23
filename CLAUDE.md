@@ -42,10 +42,10 @@ kodundadır; agent'lar onları değiştiremez.
 | `.claude/hooks/` | `guard_secrets.py` (gizli dosya / LinkedIn oturumu), `check_cv_output.py` (CV biçimi) |
 | `.claude/settings.json`, `.mcp.json` | başsız oturumun izinleri, hook'lar, cv-tools sunucusu |
 | `profile/` | `cv_base.md`, `projects.md` — adayın gerçeklerinin TEK kaynağı (İngilizce veri) |
-| `templates/cv_template.docx` | Google Doc/PDF şablonu |
+| `templates/cv_template.docx` | Google Doc/PDF şablonu (ATS düzeltmeli + kullanıcı ayarı); yedekler `cv_template_ats_v1.docx` (ayar öncesi) ve `cv_template_eski.docx` (ATS öncesi), `CV_TEMPLATE` ile seçilir |
 | `prompts/ozet_sistem.md` | panel özetinin Türkçe system prompt'u |
-| `src/applyjobs/` | deterministik araçlar: `mcp_server`, `agent_runner`, `pipeline`, `sheets`, `scraper`, `docx_builder`, `drive_docs`, `cv_output`, `cover_letter`, `joblookup`, `summary_api` |
-| `outputs/` (gitignore) | `cv/markdown`, `cv/pdf`, `cv/analysis`, `job_descriptions`, `cover_letters` |
+| `src/applyjobs/` | deterministik araçlar: `mcp_server`, `agent_runner`, `pipeline`, `sheets`, `scraper`, `docx_builder`, `drive_docs`, `pdf_check`, `cv_output`, `cover_letter`, `joblookup`, `summary_api` |
+| `outputs/` (gitignore) | `cv/markdown`, `cv/pdf`, `cv/docx`, `cv/analysis`, `job_descriptions`, `cover_letters` |
 
 ## Agent çalışmaları için kurallar
 
@@ -75,6 +75,8 @@ claude mcp list   # cv-tools: ✔ Connected görünmeli
 ./.venv/bin/python scripts/run_once.py --row 430 --allow-staged   # ilan kalkmış: panel metniyle üret
 CV_MODEL=claude-opus-5-5 CV_EFFORT=high ./.venv/bin/python scripts/regenerate.py --from 309 --to 309 -i "…"
 ./.venv/bin/python scripts/cover_letter.py --cv-no 305 [--lang tr] [--force]
+./.venv/bin/python scripts/check_pdfs.py --from 200 --to 559 [--errors-only]   # PDF metin katmanı denetimi
+./.venv/bin/python scripts/rebuild_pdf.py --from 560 --to 560   # Markdown'dan docx/Doc/PDF yeniden bas, model yok
 ```
 
 Claude Code içinden aynı akışlar: `/cv-uret [--row N] [--limit N] [--allow-staged]`,
@@ -97,7 +99,9 @@ Extension: `node --check extension/content.js`, sonra `chrome://extensions` → 
 sekmesini yenile. Hook'lar: örnek JSON'u stdin'den ver (`check_cv_output.py`'ye `### HEADLINE`
 taşıyan geçerli bir `cv_<no>_analysis.md` yolu → exit 0; HEADLINE'sız eski dosyalar artık exit 2
 verir, beklenen bu). Kural/skill dosyasını değiştirince bir CV üretip kalını-sil
-testini uygula (bkz. `docs/mimari-ve-tuzaklar.md` §2).
+testini uygula (bkz. `docs/mimari-ve-tuzaklar.md` §2). Şablona dokununca bir CV'yi gerçek
+dönüşümden geçir ve `scripts/check_pdfs.py` ile denetle (hata = 0). Tek sayfa payını
+`pdftotext -bbox` ile ölç (bkz. "Tek sayfa" ve "ATS okunabilirliği").
 
 ## Birlikte değişmesi gerekenler
 
@@ -105,6 +109,8 @@ testini uygula (bkz. `docs/mimari-ve-tuzaklar.md` §2).
 - `summary_api._FIT_GREEN_MIN` (70) ↔ `content.js` `renderFit`
 - `prompts/ozet_sistem.md`, `JobSummary` şeması ya da `profile/*` değişince `summary_api._CACHE_VERSION`'ı artır
 - `pipeline._LINKEDIN_ID_RE` ↔ `joblookup._LINKEDIN_ID_RE`
+- Şablonların bölüm başlıkları ↔ `docx_builder._find_header` çağrıları ↔ `pdf_check.HEADINGS`
+  (üç şablon da çalışır kalmalı: `cv_template.docx`, `cv_template_ats_v1.docx`, `cv_template_eski.docx`)
 - `profile/`, `.claude/`, `prompts/` altındaki Markdown **veridir**: hiçbir biçimlendirici dokunmamalı
   (`*` → `-` dönüşümü bir kez bütün maddeleri ayrıştırmadan düşürdü)
 - `sheets` kilidi yeniden girişli değil: bir `@_locked` metodu başka birinin içinden çağırma

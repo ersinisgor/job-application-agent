@@ -14,11 +14,11 @@ Backend Developer focused on building scalable REST APIs and backend systems usi
 **AI & LLM**: OpenAI API, Claude API, Claude Code, LangChain, RAG, Embeddings, Vector Search, AI Agents, Prompt Engineering <br>
 
 ### EXPERIENCE
-#### Software Developer - Başlangıç Noktası | Nov 2024 – Present
+#### Software Developer - Başlangıç Noktası | Nov 2024 - Present
 * Develop and maintain web applications using WordPress and AI-powered integrations
 * Build and customize responsive interfaces, integrating modern web technologies and AI-driven solutions
 
-#### Backend Developer Intern - Siliconmade R&D | Jun–Aug 2025
+#### Backend Developer Intern - Siliconmade R&D | Jun 2025 - Aug 2025
 * Developed a .NET 8 microservice using Clean Architecture and PostgreSQL persistence
 * Built REST APIs with JWT authentication and validation
 * Applied CQRS (MediatR) and implemented API Gateway (YARP)
@@ -55,8 +55,10 @@ Tech: NestJS, Next.js, TypeScript, PostgreSQL, Prisma ORM, JWT, Docker, Jest, Sw
 Tech: NestJS, TypeScript, PostgreSQL, TypeORM, JWT
 
 ### EDUCATION
-Anadolu University - Computer Programming (GPA: 3.71 / 4.00) | 2024–2025
-Siliconmade Academy - Full-Stack & Backend Development Bootcamp | 2023–2024
+Anadolu University - Computer Programming (GPA: 3.71 / 4.00) | 2024 - 2025
+Siliconmade Academy - Full-Stack & Backend Development Bootcamp | 2023 - 2024
+Sakarya University - Master's Degree, Business Administration | 2013 - 2015
+Suleyman Demirel University - Bachelor's Degree, Civil Engineering | 2005 - 2009
 
-### PREVIOUS EXPERIENCE (Civil Engineer - Construction Site Team Lead)
+### PREVIOUS EXPERIENCE (Civil Engineer - Construction Site Team Lead | 2010 - 2023)
 Led on-site teams of up to 40 personnel, managing stakeholder coordination, deadline-driven planning, and operational problem solving in large-scale construction projects.

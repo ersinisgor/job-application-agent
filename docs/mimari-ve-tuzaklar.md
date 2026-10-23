@@ -141,8 +141,10 @@ turlarda agent başlatma (main.py zaten başlatmıyor).
   False: tetik başvuru anına taşındığından başarısız scrape büyük olasılıkla kalkmış ilan demek.
   `finalize_cv` sheet yazımından sonra dosyayı siler; `prune_pending_jd` 14 günden eskileri temizler.
 - **Google Doc dışa aktarımı servis hesabıyla değil OAuth ile:** servis hesabı kişisel My Drive'da dosya
-  oluşturamaz. `.docx` (`templates/cv_template.docx`'ten) Google Doc mimeType'ıyla yüklenir, Drive
-  dönüştürür, sonra PDF olarak geri indirilir. Best-effort: hata kaydedilen Markdown CV'yi geri almaz.
+  oluşturamaz. `.docx` (`config.CV_TEMPLATE_FILE`, varsayılan `templates/cv_template.docx`) önce
+  `outputs/cv/docx/`'e yazılır, sonra Google Doc mimeType'ıyla yüklenir. Drive dönüştürür, PDF olarak
+  geri indirilir, `pdf_check.fix_ligatures` ile düzeltilip `check_cv_pdf` ile denetlenir (bkz. "ATS
+  okunabilirliği"). Best-effort: hata kaydedilen Markdown CV'yi geri almaz.
 
 ### CV dürüstlük sözleşmesi
 
@@ -160,11 +162,13 @@ troubleshooting**`); logging'in içkin özelliği olduğu için tolere edilir.
 ### Markdown ↔ .docx ayrıştırma tuzakları (üç kez canlıya çıktı)
 
 "İncelediğin Markdown ≠ işverene giden PDF" hatası üç farklı yoldan geldi; `check_cv_output.py` hook'u
-bunları artık yazım anında yakalıyor.
+bunları artık yazım anında yakalıyor, `pdf_check.check_cv_pdf` de son üründe (PDF metin katmanı) bir
+daha doğruluyor. 2026-10-23 taramasında (`scripts/check_pdfs.py --from 200 --to 559`) içerik eşliği
+hataları yalnızca CV ≤ 308'de çıktı: aşağıdaki eski builder hataları; 309–559'da yanlış alarm yok.
 
 - **EXPERIENCE maddeleri:** `build_docx` her girdinin maddelerini sırayla doldurur (2026-07-16'ya kadar
   yalnızca "Intern" girdisi doldurulur, mevcut işin maddeleri şablonun donmuş metniyle giderdi).
-  Girdi **başlıkları** bilerek doldurulmaz (şablon tarihi `Jun – Aug 2025` diye yazar).
+  Girdi **başlıkları** bilerek doldurulmaz; tarih şablondan gelir (`Jun 2025 - Aug 2025`).
   `_fill_bullets` her girdinin yuvasını bağımsız büyütür/küçültür.
 - **Madde işareti `[*-]\s+` (`_BULLET_RE`), yalnızca `*` değil.** 2026-08-07'de bir editörün
   format-on-save'i (Prettier) `cv_base.md`'deki `*` listelerini `-` yaptı ve bütün maddeler
@@ -190,6 +194,18 @@ bunları artık yazım anında yakalıyor.
 yüksekliği ~12.3pt). İçerik 1. sayfada 781.5pt'ye kadar iner; `cv_base.md` 756.9pt'de biter → agent'ın
 **2 satırlık** payı var (Job Application Agent projesi eklenmeden önce 3'tü; kurallar buna göre 2).
 
+- **ATS şablonu (2026-10-23) aynı payı korur.** Tablosuz eğitim 2 satır ekledi (4 × 10.9pt); geri
+  kazanmak için 8–9pt metin paragraflarının satır aralığı 1.0 → 0.95 (`w:line="228"`, satır ~11.7pt).
+  Ölçüm: `cv_base.md` 758.0pt (eski şablon 756.9), cv_559 769.7 (769.2); eski şablonda sınıra dayanan
+  324/348/362/371 yenisinde de tek sayfa (781.3pt). Agent kuralı bilerek **2 satır** kaldı: eski
+  şablona dönüldüğünde de her CV sığsın.
+- **Kullanıcı ayarı (aynı gün, cv_560'ın Doc'undan):** üst blok 6.5pt uzadı (iki satırlı iletişim,
+  12pt rol satırı), 9pt'ye inen 6 başlık daha fazlasını geri verdi. Ölçüm: `cv_base.md` 756.4pt,
+  cv_560 768.1, 324/348/362/371 779.7 — pay biraz büyüdü, kural yine 2 satır.
+- **A4 denendi, net kayıp.** Şablon -270 twip girintiyle metni kâğıt kenarına 5.4 mm yaklaştırıyor;
+  A4'te aynı genişliği korumak 1.6 mm kenar ister. Genişlik 16.7pt daralınca 4–5 madde bir satır
+  daha kırılıyor ve kazanılan ~50pt'yi yiyor.
+
 - **Şablonun sonundaki boş paragraf boş bir 2. sayfa üretiyordu.** İçerik son satıra inince o
   görünmez satır sığmıyor ve Google'ın PDF'i ikinci, bomboş bir sayfa taşıyordu (177 PDF'in 7'si).
   `_shrink_trailing_empty_paragraph` onu 1pt'ye indirir (silmez: belge bir paragrafla bitmeli). Bu
@@ -197,6 +213,68 @@ yüksekliği ~12.3pt). İçerik 1. sayfada 781.5pt'ye kadar iner; `cv_base.md` 7
   hatası ilk deneyim maddesini düşürmüştü, güncel builder'la içerik gerçekten taşıyor; yerel PDF
   gönderilen hâline geri kondu (Google Doc'u yeniden kurulmuş hâlde, Drive sürüm geçmişinde eskisi var).
 - 7 PDF'te (270, 280, 283, 300, 302, 330, 355) içerik gerçekten taşıyor; bütçe 3 satırken üretildiler.
+
+### ATS okunabilirliği (2026-10-23)
+
+ATS PDF'in görüntüsünü değil **metin katmanını** okur. Google'ın PDF'i sağlam bir temel: görüntü
+değil gerçek metin, fontlar gömülü ve Unicode eşlemeli, tek sütun, Tagged, header/footer boş. Sorunlar
+şablondaydı; `templates/cv_template.docx` bunlara göre düzeltildi (tek seferlik bir python-docx
+düzenlemesi; değişikliklerin tamamı aşağıdaki tabloda), sonra kullanıcının ayarıyla son hâlini aldı.
+Üç şablon var, `CV_TEMPLATE` ile seçilir:
+
+| Dosya | Ne |
+|---|---|
+| `cv_template.docx` | varsayılan: ATS düzeltmeleri + kullanıcının cv_560 üzerindeki ayarı |
+| `cv_template_ats_v1.docx` | ATS düzeltmeleri, kullanıcı ayarından önce (commit 5fc20f4'teki şablon) |
+| `cv_template_eski.docx` | ATS düzeltmeleri öncesinin birebir tasarımı |
+
+**Kullanıcı ayarı (2026-10-23).** Kullanıcı cv_560'ı Google Docs'ta düzenledi. Değerler, Doc'un ilk
+ve son revizyonunun Google DOCX dışa aktarımları paragraf paragraf karşılaştırılarak çıkarıldı;
+metinler, maddeler ve kenar boşlukları değişmemişti. Şablona uygulandıktan sonra aynı Markdown'dan
+basılan PDF, kullanıcının PDF'iyle 61 satırın hepsinde konum olarak ve 100 dpi görüntüde birebir aynı.
+
+| Öğe | ATS v1 | Kullanıcı ayarı |
+|---|---|---|
+| Fotoğraf | 45.4pt; soldan 40.6, üstten 9.4pt | 53.5pt (679503 EMU); soldan 15.9, üstten 10.6pt |
+| Rol satırı | varsayılan 11pt, satır 0.9 | 12pt, satır 1.0 |
+| İletişim | tek satır, sağa yaslı, 8.5pt; üstte ve altta boşluk paragrafı | iki ortalı satır, 10pt: telefon \| e-posta \| konum / LinkedIn \| GitHub \| `https://ersinisgor.netlify.app`; boşluk paragrafları yok (ikinci satır 0.7 aralıklı, altındaki boşluğun yerini tutuyor) |
+| 6 bölüm başlığı | 10pt | 9pt |
+
+`top[1]` (builder'ın rol satırını bulduğu paragraf) değişmedi: SUMMARY'den önceki boş olmayan
+paragraflar artık ad, rol, iletişim-1, iletişim-2.
+
+| Sorun (eski şablon) | Neden riskli | Yeni şablon |
+|---|---|---|
+| `SUMMARY____…` alt çizgi run'ı | `_` kelime karakteri: başlık tek token, bölüm algılanmaz | paragraf alt kenarlığı (`w:pBdr`, 76A5AF) |
+| Eğitim 2×2 tablo | `-layout` çıkarımı iki dereceyi tek satırda birleştiriyor; Greenhouse tabloyu parse hata nedeni sayıyor | 4 tek sütun paragraf, ters kronolojik |
+| `LinkedIn` / `Github` link metni | parser link metnini saklar, URL'yi değil | `linkedin.com/in/…`, `github.com/…` görünür; v1'de portfolyo `Portfolio` kaldı (tek satırda tam adres fotoğrafın altına uzanıyordu), kullanıcı ayarında iletişim iki satır ve portfolyo tam URL |
+| 5 yüzen ikon (yazının arkasında) | grafik; konumları metne çakılı | silindi; fotoğraf kaldı (1024 → 320 px, PDF 1 MB → ~210 KB). Boyutu ve konumu kullanıcı ayarında |
+| `Nov 2024 – Present`, `Jun – Aug 2025`, `2023–2024` | en-dash'i bölmeyen parser tarihi düşürür (örnek projede Workday'de belgelenmiş); `Jun` yılsız | ASCII `-`, `Jun 2025 - Aug 2025` |
+| `Master’s` (U+2019) | düz `'` ile aranan derece eşleşmeyebilir | `Master's`, `Bachelor's` |
+| Eski kariyer tarihsiz | iş kaydı çıkmaz | `PREVIOUS EXPERIENCE (… \| 2010 - 2023)` |
+
+**Ligatür (şablondan bağımsız):** Google Nunito'daki fi/fl'yi tek glif çizip metin katmanında
+U+FB01/U+FB02'ye eşliyor; pypdf gibi çıkarıcılar `workﬂows` okuyor (pdftotext çözdüğü için ilk
+testte görünmedi). `pdf_check.fix_ligatures` ToUnicode CMap'ini `fi`/`fl`ye çevirir; çizim, pdftotext
+çıktısı ve Tagged yapısı birebir aynı kalır. Bu yalnızca yerel `outputs/cv/pdf/` kopyasında:
+Drive'dan "PDF olarak indir" ligatürlü hâli verir.
+
+**Denetim:** `pdf_check.check_cv_pdf` her dışa aktarımdan sonra çalışır (pypdf, layout modu). Varsayılan
+mod Google'ın PDF'inde her kelimeyi ayrı satıra koyuyor. `errors` (içerik eşliği, sayfa sayısı,
+(cid:)/�, 2.5 MB üstü) failures.log'a ve bildirime gider. `ats` (alt çizgi, başlık satırı, Unicode tireli
+tarih, URL, ligatür) yalnızca loglanır ve `finalize_cv`/`finalize_regen`'in `pdf_warnings`'inde
+raporlanır; eski şablon bunları her CV'de bilerek verir. Toplu tarama: `scripts/check_pdfs.py`.
+
+**Format:** PDF varsayılan kalır. Metin tabanlı, tek sütunlu PDF modern ATS'lerde (Greenhouse, Lever,
+Ashby, Workday) DOCX ile neredeyse eşit okunuyor. `outputs/cv/docx/cv_<no>.docx` (builder'ın baytları,
+fontlar gömülü) Word isteyen ilanlar ve katı ya da eski portallar (Workday, Taleo, iCIMS) için.
+TXT üretilmiyor: yalnızca "yapıştır" alanlarına yarar.
+
+**Eski tasarıma dönüş:** `.env`'e `CV_TEMPLATE=cv_template_eski.docx` (ya da kullanıcı ayarından önceki
+ATS sürümü için `cv_template_ats_v1.docx`), poller'ı yeniden başlat. Var
+olan CV'leri o tasarımla yeniden basmak için `scripts/rebuild_pdf.py --from N --to M` (model çağrısı
+yok; aynı adlı Doc güncellenir, eskisi Drive geçmişinde kalır). Doğrulandı: eski şablonla basılan
+cv_559 PDF'i, orijinaliyle metin ve görüntü olarak birebir aynı.
 
 ### Yeniden üretim talimatı
 

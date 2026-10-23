@@ -224,7 +224,8 @@ def finalize_cv(row: int) -> dict:
         return {"status": "error", "row": row, "cv_no": cv_no, "message": str(exc)}
 
     pipeline.save_cv_markdown(cv_no, cv_md)
-    pipeline._export_google_doc(cv_no, cv_md)  # hata olursa kendisi kaydeder, CV kalır
+    # Hata olursa kendisi kaydeder, CV kalır. Uyarılar orkestratörün raporuna gider.
+    pdf_warnings = pipeline._export_google_doc(cv_no, cv_md)
 
     try:
         SheetsClient().write_processed_row(row, res["fields"], cv_no, match_rate, languages)
@@ -239,6 +240,7 @@ def finalize_cv(row: int) -> dict:
     joblookup.clear_pending_jd(joblookup.linkedin_job_id(res["link"]))
     _RESERVED.pop(row, None)
     pdf = settings.pdf_dir / f"cv_{cv_no}.pdf"
+    docx = settings.docx_dir / f"cv_{cv_no}.docx"
     logger.info("CV %d done for row %d (match rate %s).", cv_no, row, match_rate)
     return {
         "status": "done",
@@ -248,6 +250,8 @@ def finalize_cv(row: int) -> dict:
         "languages": languages,
         "cv_path": str(settings.markdown_dir / f"cv_{cv_no}.md"),
         "pdf_path": str(pdf) if pdf.exists() else None,
+        "docx_path": str(docx) if docx.exists() else None,
+        "pdf_warnings": pdf_warnings,
     }
 
 
@@ -304,14 +308,17 @@ def finalize_regen(cv_no: int) -> dict:
         return {"status": "error", "cv_no": cv_no, "message": str(exc)}
 
     pipeline.save_cv_markdown(cv_no, cv_md)
-    pipeline._export_google_doc(cv_no, cv_md)
+    pdf_warnings = pipeline._export_google_doc(cv_no, cv_md)
     if match_rate is not None:
         try:
             SheetsClient().write_match_rate(info["row"], match_rate)
         except Exception:  # noqa: BLE001
             logger.exception("Match-rate write failed for CV %d (files were saved).", cv_no)
     _REGEN.pop(cv_no, None)
-    return {"status": "done", "cv_no": cv_no, "match_rate": match_rate}
+    docx = settings.docx_dir / f"cv_{cv_no}.docx"
+    return {"status": "done", "cv_no": cv_no, "match_rate": match_rate,
+            "docx_path": str(docx) if docx.exists() else None,
+            "pdf_warnings": pdf_warnings}
 
 
 @server.tool()

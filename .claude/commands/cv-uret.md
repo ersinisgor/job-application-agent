@@ -53,7 +53,8 @@ SUMMARY KAPANIŞ CÜMLESİ KURALI. Reviewer başarısız olursa sorun değil: `f
 kullanır.
 
 **d. Kesinleştir:** `mcp__cv-tools__finalize_cv(row)`.
-- `status: "done"` → CV No, match rate ve PDF yolunu kaydet.
+- `status: "done"` → CV No, match rate, PDF ve DOCX yolunu ve `pdf_warnings`'i kaydet. Uyarı
+  CV'yi başarısız saymaz ve yeniden deneme gerektirmez; yalnızca raporlanır.
 - `status: "error"` → mesajı kaydet. Numara harcanmadı; satır aday olarak kalır ve bir sonraki
   turda yeniden denenir. cv-writer analiz dosyasını yazamadıysa bu satır için onu en fazla BİR kez
   daha çağırıp `finalize_cv`'yi tekrarlayabilirsin.
@@ -63,7 +64,8 @@ Bir satırın hatası diğer satırları durdurmaz.
 ## Adım 3: Rapor
 
 Türkçe, kısa:
-- Üretilenler: `CV <no> ← satır <row> | match <oran> | <pdf yolu>`
+- Üretilenler: `CV <no> ← satır <row> | match <oran> | <pdf yolu> | <docx yolu>`; `pdf_warnings`
+  boş değilse altına `  ⚠ PDF kontrolü: <uyarılar, ; ile>`
 - Kalkmışlar: `satır <row>`
 - Hatalılar: `satır <row>: <mesaj>`
 

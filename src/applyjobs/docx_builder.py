@@ -389,10 +389,10 @@ def build_docx(markdown_cv: str) -> bytes:
     exp_start = _find_header(paras, "EXPERIENCE")
 
     # --- EXPERIENCE: HER girdinin maddelerini sırayla doldur ---
-    # Girdi başlıkları bilerek DOLDURULMAZ: şablonun ifadesi tasarlanmış olandır (ör. tarihi
-    # "Jun – Aug 2025" diye aralıklı yazar, cv_base.md ise "Jun–Aug 2025" yazar) ve şimdiye kadar
-    # üretilen her CV'de Markdown başlıkları cv_base.md ile birebir aynı — yani kopyalanacak bir şey
-    # yok, kaybedilecek bir şey var.
+    # Girdi başlıkları bilerek DOLDURULMAZ: şablonun ifadesi tasarlanmış olandır (şirket köprüsü,
+    # ATS için ASCII tarih "Jun 2025 - Aug 2025"; eski şablon "Jun – Aug 2025" yazar) ve şimdiye
+    # kadar üretilen her CV'de Markdown başlıkları cv_base.md ile birebir aynı — yani kopyalanacak
+    # bir şey yok, kaybedilecek bir şey var.
     proj_start = _find_header(paras, "SELECTED PROJECTS")
     entry_slots: list[list] = []  # madde paragrafları, girdi başına bir liste, sırayla
     cur_slot: list | None = None
