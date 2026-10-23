@@ -3,6 +3,19 @@
 Uygulama 7/24 kendi kendine çalışmaz. Drive'daki tabloyu **yalnızca sen terminalden
 başlattığın sürece** izler. Aşağıdaki iki kullanım şeklinden birini seç.
 
+> ## 🤖 CV'leri artık Claude Code agent'ları üretiyor
+>
+> Komutlar ve butonlar eskisi gibi. Fark perde arkasında: CV ve mektup artık doğrudan API ile
+> değil, **Claude Code agent'larıyla** (senin Claude aboneliğinle) üretiliyor. Bunun için bir kez
+> terminalde `claude` yazıp Claude Code'a giriş yapmış olman yeterli. Kontrol: `claude mcp list`
+> çıktısında `cv-tools: ✔ Connected` görünmeli.
+>
+> - Bir CV medium effort'ta **~2-6 dakika** sürer. Para faturalanmaz, abonelik kotandan düşer.
+> - Üretilen her şey artık **proje klasöründe**, `outputs/` altında (GitHub'a gitmez). Eski
+>   masaüstü klasörün yedek olarak duruyor.
+> - Aynı akışları Claude Code'un içinden de çalıştırabilirsin (bkz.
+>   [Claude Code içinden kullanım](#claude-code-içinden-kullanım)).
+
 > Her komuttan önce proje klasörüne girmen gerekir:
 > ```bash
 > cd /Users/mac/code/ersinisgor/job-apply-agent
@@ -29,8 +42,10 @@ başlattığın sürece** izler. Aşağıdaki iki kullanım şeklinden birini se
 
 ## Seçenek A — Sürekli izleme ("başlat ve unut")
 
-Terminal açık kaldığı sürece her 20 saniyede bir tabloyu kontrol eder; **B sütunu `Üretilecek`
-yapılmış** satırları otomatik işler (CV No + Match Rate + Google Doc).
+Terminal açık kaldığı sürece her 20 saniyede bir tabloyu kontrol eder. Bu kontrol model
+çağırmaz. **B sütunu `Üretilecek` yapılmış** bir satır görünce CV agent'ını başlatır
+(CV No + Match Rate + Google Doc). Bir satır hata verirse aynı satır 15 dakika boyunca yeniden
+denenmez, kota boşa harcanmasın diye.
 
 ```bash
 cd /Users/mac/code/ersinisgor/job-apply-agent
@@ -92,7 +107,7 @@ açıklamasından** yeniden ürettirirsin — LinkedIn'e tekrar gidilmez. Modele
 **Tek bir CV'yi (örnek: 309) açıklamayla yeniden oluştur:**
 ```bash
 cd /Users/mac/code/ersinisgor/job-apply-agent
-CLAUDE_MODEL=claude-opus-4-8 CLAUDE_EFFORT=high ./.venv/bin/python scripts/regenerate.py \
+CV_MODEL=claude-opus-5-5 CV_EFFORT=high ./.venv/bin/python scripts/regenerate.py \
   --from 309 --to 309 \
   -i "Remove the Library Management System project and feature a .NET project instead"
 ```
@@ -101,14 +116,32 @@ CLAUDE_MODEL=claude-opus-4-8 CLAUDE_EFFORT=high ./.venv/bin/python scripts/regen
   uygulanır — `--from 309 --to 312` yazarsan aynı açıklama dördüne de uygulanır.
 - **`-i` açıklaması** İngilizce ya da Türkçe olabilir (CV yine İngilizce üretilir).
 - **Dürüstlük kuralı geçerli:** eklenmesini istediğin **proje veya teknoloji** gerçek olmalı
-  (`config/projects.md` veya `config/cv_base.md`'de bulunmalı) — model uydurmaz. Buna karşılık
+  (`profile/projects.md` veya `profile/cv_base.md`'de bulunmalı) — model uydurmaz. Buna karşılık
   *debugging, best practices, documentation, testing, scalability, high-availability* gibi
   **ürün adı olmayan** ifadeler artık serbestçe eklenebiliyor (aşağıya bak).
 - Açıklamasız da çalışır (sadece mevcut ayarlarla yeniden üretir): `-i`'yi yazmazsın.
 - `--dry-run` eklersen hangi CV'lerin hedeflendiğini yazar, hiçbir şey üretmez.
 
-> Model/effort'u güçlendirmek için baştaki `CLAUDE_MODEL=... CLAUDE_EFFORT=high` kısmını
-> ekle; yazmazsan `.env`'deki varsayılan kullanılır.
+> Model/effort'u güçlendirmek için baştaki `CV_MODEL=... CV_EFFORT=high` kısmını
+> ekle; yazmazsan `.env`'deki varsayılan (`claude-sonnet-5`, `medium`) kullanılır.
+> (Eski `CLAUDE_MODEL` / `CLAUDE_EFFORT` adları artık kullanılmıyor: `CLAUDE_EFFORT`, Claude
+> Code'un kendi değişkeniyle çakışıp `.env`'deki değeri sessizce eziyordu.)
+
+---
+
+## Claude Code içinden kullanım
+
+Proje klasöründe `claude` yazıp Claude Code'u açtıysan aynı işleri komutla da yaptırabilirsin:
+
+| Komut | Ne yapar |
+|-------|----------|
+| `/cv-uret` | `Üretilecek` işaretli bütün satırlar için CV üretir (`--row 250`, `--limit 1`, `--allow-staged` de olur) |
+| `/cv-yenile 309 309 Remove project X, feature a .NET project` | CV 309'u kaydedilmiş ilandan, talimatla yeniden üretir |
+| `/mektup 305 tr` | CV 305 için Türkçe mektup (`--force` ile yeniden üretir) |
+| `/loop 10m /cv-uret` | poller yerine: oturum açık kaldıkça her 10 dakikada bir kontrol eder |
+
+Bu komutlar terminaldeki script'lerin yaptığının aynısını yapar; script'ler de perde arkasında
+bunları `claude -p` ile çalıştırır.
 
 ---
 
@@ -116,7 +149,7 @@ CLAUDE_MODEL=claude-opus-4-8 CLAUDE_EFFORT=high ./.venv/bin/python scripts/regen
 
 Her başvuru cover letter istemediği için mektuplar CV ile birlikte üretilmez; **sen istediğinde,
 tek bir iş için** üretilir. Mektup; o işe özel üretilmiş **CV'den + kaydedilmiş ilan
-açıklamasından + `config/projects.md`'den** yazılır — yani ilan yayından kalkmış olsa bile çalışır,
+açıklamasından + `profile/projects.md`'den** yazılır — yani ilan yayından kalkmış olsa bile çalışır,
 LinkedIn'e tekrar gidilmez.
 
 **Yol 1 — panelden (en pratik):** LinkedIn'de o ilandayken paneldeki **Mektup** butonuna bas.
@@ -143,7 +176,7 @@ cd /Users/mac/code/ersinisgor/job-apply-agent
 
 **Bilinmesi gerekenler:**
 
-- **Dosyanın kendisi önbellektir.** Mektup `~/Desktop/İş Arama/Job Applications/2026/Cover Letters/`
+- **Dosyanın kendisi önbellektir.** Mektup `outputs/cover_letters/`
   altına `cover_letter_<no>_<dil>.md` olarak yazılır. Aynı iş+dil için tekrar istersen model
   çağrılmaz, kayıtlı dosya verilir. Yeniden yazdırmanın tek yolu `--force` / **Yeniden üret**.
 - **Kimlik (iş, dil) çiftidir:** `cover_letter_305_en.md` ve `cover_letter_305_tr.md` iki ayrı
@@ -157,7 +190,8 @@ cd /Users/mac/code/ersinisgor/job-apply-agent
 - **Dürüstlük kuralı burada da geçerli:** `projects.md` yalnızca senin kendi projelerine *detay*
   ekleyebilir (hangi teknoloji, nasıl kurgulanmış); yeni bir işveren/görev/metrik ekleyemez ve
   kişisel bir projeyi profesyonel deneyim gibi gösteremez.
-- **Uzunluk 150-200 kelime**, maliyet mektup başına ~$0.05.
+- **Uzunluk 150-200 kelime.** Mektubu cover-letter-writer agent'ı yazar; yeni bir mektup
+  ~30-60 saniye sürer (panelde "Mektup hazırlanıyor…" yazar), kayıtlı mektup anında gelir.
 
 **Panelde çıkabilecek hatalar:**
 
@@ -171,8 +205,8 @@ cd /Users/mac/code/ersinisgor/job-apply-agent
 
 ## CV'ye ne eklenebilir, ne eklenemez?
 
-CV'nin her satırını mülakatta savunabilmen gerekiyor. Prompt ilandaki her anahtar kelimeyi
-**üç tipe** ayırıyor:
+CV'nin her satırını mülakatta savunabilmen gerekiyor. Kurallar
+(`.claude/skills/ats-cv-kurallari/`) ilandaki her anahtar kelimeyi **üç tipe** ayırıyor:
 
 | Tip | Örnek | Ne olur |
 |-----|-------|---------|
@@ -206,10 +240,10 @@ silebilir. (Uygulama bu sütunlara asla yazmaz; sorun eşzamanlı düzenlemeden 
 1. Satırın **tüm** bilgilerini gir (Başvuru, Easy Apply, Yer, Uzaktan, Çalışma Şekli, İlan Linki...).
 2. **~15-20 saniye bekle** (Google'ın kaydetmesi için) veya tablo sekmesini kapat.
 3. Sonra uygulamanın işlemesine bırak.
-4. Uygulama o satırı işlerken (~1.5 dk) **o satırı tarayıcıda düzenleme.**
+4. Uygulama o satırı işlerken (~2-6 dk) **o satırı tarayıcıda düzenleme.**
 
 > Not: Uygulama artık tabloya **yalnızca CV üretildikten sonra, tek seferde** yazıyor (CV No + Match Rate
-> birlikte). Bu, senin girişlerine ~1.5 dk senkronizasyon süresi tanır ve çakışma riskini azaltır — ama
+> birlikte). Bu, senin girişlerine birkaç dakikalık senkronizasyon süresi tanır ve çakışma riskini azaltır — ama
 > yukarıdaki kurala uymak yine de en güvenlisidir.
 >
 > En kesin yöntem: ilanları gir, tabloyu kapat, sonra **Seçenek B** (tek seferlik) ile çalıştır.
@@ -237,13 +271,16 @@ N sütunu hâlâ "yapıldı mı?" sorusunun cevabı: doluysa satır bir daha iş
 
 | Çıktı | Konum |
 |-------|-------|
-| `cv_<no>.md` | Masaüstü/İş Arama/Job Applications/2026/CVs |
-| `cv_<no>.docx` | aynı CVs klasörü (yerel kopya) |
+| `cv_<no>.md` | `outputs/cv/markdown/` |
+| `cv_<no>.pdf` | `outputs/cv/pdf/` |
 | `cv_<no>` (Google Doc) | Drive → Resumes based on Jobs |
-| `cv_<no>_analysis.md` | .../2026/CV_Analysis |
-| `job_description_<no>.md` | .../2026/Job Description |
-| `cover_letter_<no>_<dil>.md` | .../2026/Cover Letters (yalnızca istediğinde — bkz. [Cover letter](#cover-letter-mektup--istek-üzerine-tek-tek)) |
+| `cv_<no>_analysis.md` | `outputs/cv/analysis/` (Türkçe ATS analizi + skor) |
+| `job_description_<no>.md` | `outputs/job_descriptions/` |
+| `cover_letter_<no>_<dil>.md` | `outputs/cover_letters/` (yalnızca istediğinde — bkz. [Cover letter](#cover-letter-mektup--istek-üzerine-tek-tek)) |
 | CV No → N sütunu, Match Rate → P sütunu, Yazılım Dili → Q sütunu | Drive'daki tablo |
+
+`outputs/` klasörü `.gitignore`'da: kişisel veridir, GitHub'a gitmez. CV numaraları eskisi gibi
+devam eder (sheet'teki en büyük N ile `state/last_cv_no`'dan büyük olanı + 1).
 
 ---
 
@@ -258,7 +295,7 @@ satır eklenir: **İlan Linki (K), Pozisyon (L), Firma (J)**. B ve CV No (N) bo�
 - **G (Uzaktan)** otomatik doldurulmaz → elle girersin (LinkedIn bu bilgiyi otomasyona vermiyor).
 - **C (Easy Apply)** LinkedIn ilanlarında boş kalır (elle), LinkedIn dışı linklerde "Yok".
 - Buton **API'ye ihtiyaç duyar** (`./scripts/start_api.sh` veya `start.sh`). CV üretimi ise ayrı:
-  ya poller açık olacak, ya da `scripts/cv_uret.command`'a çift tıklayacaksın.
+  ya poller açık olacak, ya da `scripts/cv_uret.command`'a çift tıklayacaksın (CV'yi agent üretir).
 
 **Buton etiketleri:**
 
@@ -267,7 +304,7 @@ satır eklenir: **İlan Linki (K), Pozisyon (L), Firma (J)**. B ve CV No (N) bo�
 | `Ekle` | ilan henüz tabloda değil |
 | `Ekleniyor…` | istek gidiyor |
 | `Eklendi ✓` | satır eklendi (ilan metni de yedek olarak kaydedildi) |
-| `Eklendi (metin yok)` | satır eklendi ama sayfadan açıklama okunamadı — poller yine de scrape edecek |
+| `Eklendi (metin yok)` | satır eklendi ama sayfadan açıklama okunamadı — CV agent'ı ilanı yine kendisi okuyacak |
 | `Zaten var` / `Zaten var · CV 312` | bu ilan tabloda zaten kayıtlı, ikinci satır açılmadı |
 | `Hata` | üzerine gel, hata mesajı tooltip'te |
 
@@ -286,12 +323,13 @@ yapman gerekir, ilk çalıştırmada mevcut ilanlar "görüldü" işaretlenir).
 
 ## Kimlik bilgileri (tekrar gerekir mi?)
 
-- **Anthropic / Google OAuth / Service Account:** kalıcı, tekrar giriş gerekmez.
-- **LinkedIn çerezleri:** zamanla dolabilir. İlan açıklamaları çekilemezse (loglarda
-  LinkedIn hatası) bir kez daha çalıştır:
-  ```bash
-  ./.venv/bin/python scripts/linkedin_login.py
-  ```
+- **Anthropic API anahtarı / Google OAuth / Service Account:** kalıcı, tekrar giriş gerekmez.
+  (API anahtarı artık yalnızca panel özeti için kullanılıyor.)
+- **Claude Code girişi:** CV ve mektup agent'ları için gerekli. Agent çalışmaları "not logged in"
+  benzeri bir hatayla bitiyorsa terminalde `claude` yazıp yeniden giriş yap.
+- **LinkedIn:** giriş gerekmez ve **yapılmamalı**. İlanlar herkese açık görünümden okunur;
+  `linkedin_login.py`'nin ürettiği oturumu hiçbir otomasyona bağlama (hesabın işaretlenip bütün
+  oturumların kapanmasına yol açmıştı).
 
 ---
 
@@ -306,6 +344,10 @@ yapman gerekir, ilk çalıştırmada mevcut ilanlar "görüldü" işaretlenir).
   yine de CV istiyorsan: `./.venv/bin/python scripts/run_once.py --row <satır> --allow-staged`.
 - **Hiçbir satır işlenmiyor ("No candidate rows"):** muhtemelen B sütununu `Üretilecek`
   yapmayı unuttun. Kontrol: `./.venv/bin/python scripts/run_once.py --dry-run`.
+- **"Başka bir CV üretimi zaten çalışıyor":** poller ve `cv_uret.command` aynı anda çalışmasın diye
+  kilit var. Diğeri bitince tekrar dene (poller zaten bir sonraki turda alır).
+- **Agent'ın ne yaptığını görmek:** `state/agent.log` (agent raporu, süre, maliyet) ve
+  `state/mcp.log` (araç çağrıları); hatalar `state/failures.log`'da.
 - **CV'ye yeni bir proje takıldıysa PDF'i de bir kontrol et:** listeden proje değiştirildiğinde
   o bloğun tamamı yeni sayılır ve model başlığı/`Tech:` satırını da bold yazar. Bu iki satırın
   `.docx`/PDF'e taşınması 2026-08-10'da düzeltildi (öncesinde takılan proje bir önceki projenin
