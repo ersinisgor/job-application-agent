@@ -71,7 +71,8 @@ LİSTESİ'nde ya da temel CV'de geçen teknolojileri kullan.
 5. **Tek sayfa:** her madde ~bir satıra sığmalı (tek satır genişliği referansı olarak bunları kullan):
    - "Built a production-style RAG platform that ingests documents, generates embeddings, and provides AI-powered Q&A with source attribution"
    - "Developed NestJS services for ingestion pipelines, vector retrieval, query rewriting, confidence scoring, and token-budgeted context assembly"
-   En fazla ~3 madde ikinci satıra kayabilir; şişirme. Her projeyi 3–4 madde + bir `Tech:` satırında tut.
+   En fazla 2 madde ikinci satıra kayabilir (şablonda yalnızca 2 boş satır var); şişirme. Her projeyi
+   3–4 madde + bir `Tech:` satırında tut.
 6. **Summary kapanış cümlesi kuralı:** orkestratörün verdiği SUMMARY KAPANIŞ CÜMLESİ KURALI'nı
    birebir uygula.
 

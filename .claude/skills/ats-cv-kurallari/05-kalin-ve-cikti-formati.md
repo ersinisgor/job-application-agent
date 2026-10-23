@@ -50,15 +50,16 @@ Summary'yi, proje maddelerini, Intern maddelerini ya da Previous-Experience aç�
 gerekli bir ATS anahtar kelimesini eklemek için gerekiyorsa** değiştir. Bir bölüm işi zaten
 karşılıyorsa ona dokunma.
 
-**Uzunluk bütçesi — şablon yaklaşık 3 boş satırla tek sayfaya sığar:**
+**Uzunluk bütçesi — şablon yalnızca 2 boş satırla tek sayfaya sığar (PDF'te ölçüldü):**
 - Varsayılan olarak orijinal ifadeyi kullan. Önemli iş anahtar kelimelerini düzenlenebilir alanlara
-  eklemek için kullanabileceğin yaklaşık **3 satırlık boş alanın** var — ama CV yine de **tek
-  sayfaya** SIĞMALI. 3 ekstra kaydırılmış satırı mutlak üst sınır say; asla tek sayfayı aşma.
+  eklemek için kullanabileceğin **2 satırlık boş alanın** var — CV yine de **tek sayfaya** SIĞMALI.
+  2 ekstra kaydırılmış satır mutlak üst sınırdır; üçüncü satır PREVIOUS EXPERIENCE'ı ikinci sayfaya
+  iter. Uzun maddeli bir projeyi takas etmek de (ADIM 8) bu bütçeden harcar.
 - Tek satır genişliği referansı olarak, şu iki satırın her biri şablonda TAM OLARAK bir dolu satırdır
   (bir kelime daha alt satıra kayar):
   - "Built a production-style RAG platform that ingests documents, generates embeddings, and provides AI-powered Q&A with source attribution"
   - "Developed NestJS services for ingestion pipelines, vector retrieval, query rewriting, confidence scoring, and token-budgeted context assembly"
-- Boş alanı akıllıca harca: toplamda en fazla **~3 madde ikinci satıra kayabilir** (ya da onun
+- Boş alanı akıllıca harca: toplamda en fazla **2 madde ikinci satıra kayabilir** (ya da onun
   yerine biraz daha uzun bir Summary) — ve sadece gerçekten değerli anahtar kelimeler ekliyorsa.
   Diğer bütün maddeleri tek satır genişliğinde ya da altında tut.
 - Kelime **eklemek** yerine kelime **değiştirmeyi** tercih et; işe zaten uyan cümleleri şişirme.
@@ -109,7 +110,7 @@ bulduğun her sorunu sessizce DÜZELT ve ancak ondan sonra düzeltilmiş sürüm
 5. **Kalın = doğru diff** (MEVCUT CV'ye göre): sadece değişen/eklenen kelimeler kalın; orijinalden
    değişmeyen her şey düz.
 6. **Tek sayfa:** her madde ~bir satıra sığıyor (genişlik sınırı olarak yukarıdaki iki referans satırı
-   kullan); en fazla ~3 madde kayıyor; her Selected Projects girdisi 3–4 madde + bir `Tech:` satırı
+   kullan); en fazla 2 madde kayıyor; her Selected Projects girdisi 3–4 madde + bir `Tech:` satırı
    tutuyor; Summary kapanış cümlesi yukarıdaki kurala uyuyor.
 
 `<MATCH_RATE>` değerini bu nihai, öz denetimden geçmiş sürüme göre ver.

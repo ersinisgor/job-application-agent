@@ -319,6 +319,38 @@ def _fill_core_skills(skill_paras: list, lines: list[str]) -> None:
         _replace_content(p, content.strip(), keep_prefix_nodes=1)
 
 
+def _shrink_trailing_empty_paragraph(doc) -> None:
+    """Belgenin sonundaki boş paragrafı 1pt'ye indirir.
+
+    Şablon PREVIOUS EXPERIENCE açıklamasından sonra varsayılan boyutta boş bir paragrafla biter.
+    İçerik sayfanın son satırına kadar inince bu görünmez satır sığmaz ve Google'ın PDF'i ikinci,
+    BOMBOŞ bir sayfa taşır (cv_371 böyle çıktı; ölçüm 2026-10-23). Paragraf silinmez — Word ve
+    Google Docs belgenin bir paragrafla bitmesini bekler — yalnızca yüksekliği sıfıra yaklaştırılır.
+    """
+    from docx.enum.text import WD_LINE_SPACING
+    from docx.shared import Pt
+
+    last = doc.paragraphs[-1]
+    if _para_text(last).strip():
+        return
+    pf = last.paragraph_format
+    pf.space_before = pf.space_after = Pt(0)
+    pf.line_spacing_rule = WD_LINE_SPACING.EXACTLY
+    pf.line_spacing = Pt(1)
+    for run in last.runs:
+        run.font.size = Pt(1)
+    # Boş paragrafın yüksekliğini run'lar değil paragraf işaretinin (pPr/rPr) boyutu belirler.
+    ppr = last._p.get_or_add_pPr()
+    rpr = ppr.find(qn("w:rPr"))
+    if rpr is None:
+        rpr = ppr.makeelement(qn("w:rPr"), {})
+        ppr.append(rpr)
+    for tag in ("w:sz", "w:szCs"):
+        for old in rpr.findall(qn(tag)):
+            rpr.remove(old)
+        rpr.append(rpr.makeelement(qn(tag), {qn("w:val"): "2"}))  # yarım punto: 2 = 1pt
+
+
 def build_docx(markdown_cv: str) -> bytes:
     """Bir .docx (bayt) döndürür = ilana özel CV içeriğiyle doldurulmuş şablon."""
     data = parse_markdown_cv(markdown_cv)
@@ -407,6 +439,8 @@ def build_docx(markdown_cv: str) -> bytes:
             if _para_text(p).strip():
                 _replace_content(p, data["previous_exp_desc"], keep_prefix_nodes=0)
                 break
+
+    _shrink_trailing_empty_paragraph(doc)
 
     buf = io.BytesIO()
     doc.save(buf)

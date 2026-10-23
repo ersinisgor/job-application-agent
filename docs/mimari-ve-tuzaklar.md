@@ -178,6 +178,20 @@ bunları artık yazım anında yakalıyor.
 - **CORE SKILLS satır sayısı değişkendir:** saf back-end ilanında `**Frontend:**` satırı çıkarılır;
   `_fill_core_skills()` yuvaları büyütür/küçültür ve kalın etiketi Markdown'dan alır.
 
+### Tek sayfa: ölçülen bütçe (2026-10-23)
+
+Şablonda kenar boşluğu 0; sınır PDF'te ölçüldü (`pdftotext -bbox`, son satırın alt kenarı, satır
+yüksekliği ~12.3pt). İçerik 1. sayfada 781.5pt'ye kadar iner; `cv_base.md` 756.9pt'de biter → agent'ın
+**2 satırlık** payı var (Job Application Agent projesi eklenmeden önce 3'tü; kurallar buna göre 2).
+
+- **Şablonun sonundaki boş paragraf boş bir 2. sayfa üretiyordu.** İçerik son satıra inince o
+  görünmez satır sığmıyor ve Google'ın PDF'i ikinci, bomboş bir sayfa taşıyordu (177 PDF'in 7'si).
+  `_shrink_trailing_empty_paragraph` onu 1pt'ye indirir (silmez: belge bir paragrafla bitmeli). Bu
+  7 PDF kayıtlı Markdown'dan yeniden basıldı, 6'sı tek sayfaya indi. cv_272 inmedi: eski bir builder
+  hatası ilk deneyim maddesini düşürmüştü, güncel builder'la içerik gerçekten taşıyor; yerel PDF
+  gönderilen hâline geri kondu (Google Doc'u yeniden kurulmuş hâlde, Drive sürüm geçmişinde eskisi var).
+- 7 PDF'te (270, 280, 283, 300, 302, 330, 355) içerik gerçekten taşıyor; bütçe 3 satırken üretildiler.
+
 ### Yeniden üretim talimatı
 
 `/cv-yenile <from> <to> [talimat]` (ya da `regenerate.py -i "…"`) talimatı
