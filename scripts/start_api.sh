@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Start ONLY the LinkedIn Job Summary API (backend for the browser extension),
-# without the CV poller. Use this while browsing LinkedIn: the poller scrapes
-# LinkedIn job pages with a headless browser, and that automation traffic from
-# your own IP keeps the account flagged (constant sign-outs).
+# YALNIZCA LinkedIn İlan Özeti API'sini (tarayıcı eklentisinin backend'i) başlatır, CV poller'ı
+# olmadan. LinkedIn'de gezinirken bunu kullan: poller (CV agent'ı üzerinden) LinkedIn ilan
+# sayfalarını başsız bir tarayıcıyla okur ve kendi IP'nden gelen bu otomasyon trafiği hesabın
+# işaretli kalmasına (sürekli oturum kapanmasına) yol açıyordu.
 #
-# Usage:
+# Kullanım:
 #   ./scripts/start_api.sh
 set -euo pipefail
 

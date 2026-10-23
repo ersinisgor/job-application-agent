@@ -1,37 +1,35 @@
-// Reads the selected job on the LinkedIn jobs page, gets a Turkish summary from the
-// Python backend, and shows it in a side panel. The panel updates as the job changes.
+// LinkedIn iş sayfasında seçili ilanı okur, Python backend'inden Türkçe bir özet alır ve
+// yan panelde gösterir. İlan değiştikçe panel güncellenir.
 //
-// SECURITY NOTE: this script makes NO extra network requests to LinkedIn. It only
-// reads the job text already visible on the page and sends it, for summarization,
-// SOLELY to its own localhost backend. (An earlier version had a hover/prefetch that
-// called LinkedIn's internal API; that was detected as automation and caused sign-outs,
-// so it was removed.)
+// GÜVENLİK NOTU: bu script LinkedIn'e HİÇBİR ek ağ isteği yapmaz. Yalnızca sayfada zaten
+// görünen ilan metnini okur ve özetlenmesi için SADECE kendi localhost backend'ine gönderir.
+// (Eski bir sürümde LinkedIn'in iç API'sini çağıran bir hover/prefetch vardı; otomasyon olarak
+// algılandı ve oturum kapanmalarına yol açtı, bu yüzden kaldırıldı.)
 
 (() => {
   "use strict";
 
   const LOG = "[JobSum]";
-  // Flip to true to print DIAG output (selector-fallback warnings + the DOM dump)
-  // used to fix selectors against LinkedIn's hashed-class UI. Off by default so the
-  // console stays quiet during normal use.
+  // LinkedIn'in hash'li sınıflı arayüzüne karşı seçicileri düzeltmek için kullanılan DIAG
+  // çıktısını (seçici yedeği uyarıları + DOM dökümü) yazdırmak için true yap. Normal kullanımda
+  // konsol sessiz kalsın diye varsayılan kapalı.
   const DEBUG = false;
-  // How long to wait for a job's description to appear in the DOM before giving up and
-  // showing a retry hint, instead of spinning forever on a layout we can't read.
+  // Bir ilanın açıklamasının DOM'da belirmesi için ne kadar bekleneceği; sonra okuyamadığımız
+  // bir yerleşimde sonsuza kadar dönmek yerine vazgeçip yeniden deneme ipucu gösterilir.
   const DESC_LOAD_TIMEOUT_MS = 12000;
-  // The new UI streams the detail pane in progressively, so an early read catches only
-  // the header/role blurb (a "Çalışma: hybrid" stub). Wait until the extracted text has
-  // stopped changing for this long before summarizing, so the stack/experience/fit
-  // sections that arrive a beat later are included.
+  // Yeni arayüz detay panelini parça parça yükler; erken bir okuma yalnızca başlığı/rol özetini
+  // yakalar (bir "Çalışma: hybrid" parçası). Özetlemeden önce çıkarılan metin bu kadar süre
+  // değişmeden kalana kadar bekle, böylece biraz sonra gelen stack/deneyim/uyum bölümleri de girer.
   const DESC_STABLE_MS = 1400;
-  // Shown whenever we could not read a real job description (never loaded, or the text
-  // we scraped turned out not to be a posting so the backend summary came back blank).
+  // Gerçek bir ilan açıklamasını okuyamadığımızda gösterilir (hiç yüklenmedi ya da okuduğumuz
+  // metin ilan çıkmadı ve backend özeti boş döndü).
   const DESC_HINT = 'İş açıklaması okunamadı. Sayfayı biraz aşağı kaydırıp "Yenile"ye bas.';
   console.log(LOG, "content script loaded:", location.href);
 
-  // --- LinkedIn DOM selectors (brittle; tried in order, first match wins) ---
-  // The description itself is no longer read via selectors — the hashed new UI made
-  // them match the wrong region (see heuristicDescription); title/company/location are
-  // still best-effort hints for the panel header and the backend payload.
+  // --- LinkedIn DOM seçicileri (kırılgan; sırayla denenir, ilk eşleşen kazanır) ---
+  // Açıklamanın kendisi artık seçicilerle okunmuyor — hash'li yeni arayüz onları yanlış bölgeye
+  // eşleştirdi (bkz. heuristicDescription); başlık/şirket/konum ise panel başlığı ve backend
+  // yükü için hâlâ best-effort ipuçları.
   const SELECTORS = {
     title: [
       ".job-details-jobs-unified-top-card__job-title",
@@ -49,64 +47,64 @@
     ],
   };
 
-  // Panel field order and labels. Deliberately minimal: one glance should be
-  // enough to decide whether the job fits. "work" is composed client-side from
-  // work_type + work_type_note (single row, e.g. "on-site — İstanbul tercihli").
+  // Panel alan sırası ve etiketleri. Bilerek asgari: ilanın uyup uymadığına karar vermek için
+  // tek bakış yetmeli. "work" istemci tarafında work_type + work_type_note'tan oluşturulur
+  // (tek satır, ör. "on-site — İstanbul tercihli").
   const FIELDS = [
     { key: "role_summary", label: "Özet" },
     { key: "work", label: "Çalışma" },
     { key: "stack", label: "Stack" },
     { key: "min_experience", label: "Deneyim" },
-    { key: "visa_sponsorship", label: "Vize / Sponsorluk" }, // shown only when present
+    { key: "visa_sponsorship", label: "Vize / Sponsorluk" }, // yalnızca varsa gösterilir
   ];
 
-  let lastJobId = null; // most recently shown job id
-  let seenOnlyShownFor = null; // job whose "dismissed, never summarized" body is up
-  let pendingJobId = null; // job waiting for its description to load
-  let pendingSince = 0; // when the pending job started waiting (for the load timeout)
-  let pendingDesc = ""; // last description read for the pending job (stability check)
-  let pendingDescSince = 0; // when pendingDesc last CHANGED (settle timer)
-  let lastShownDescription = ""; // description of the shown job (stale guard)
-  let requestSeq = 0; // request sequence to avoid race conditions
+  let lastJobId = null; // en son gösterilen ilan no'su
+  let seenOnlyShownFor = null; // "kapatıldı, hiç özetlenmedi" gövdesi açık olan ilan
+  let pendingJobId = null; // açıklamasının yüklenmesini bekleyen ilan
+  let pendingSince = 0; // bekleyen ilanın beklemeye başladığı an (yükleme zaman aşımı için)
+  let pendingDesc = ""; // bekleyen ilan için son okunan açıklama (kararlılık kontrolü)
+  let pendingDescSince = 0; // pendingDesc'in son DEĞİŞTİĞİ an (oturma zamanlayıcısı)
+  let lastShownDescription = ""; // gösterilen ilanın açıklaması (bayatlık koruması)
+  let requestSeq = 0; // yarış durumlarını önlemek için istek sırası
   let lastBodyHtml = `<div class="jobsum-status">Ready — click a job on the left.</div>`;
-  let lastHeader = { title: "Job Summary", company: "" }; // panel header state
-  let userClosed = false; // don't reopen if the user closed the panel
-  let showingList = false; // panel is showing a marker list instead of a summary
-  let listKind = "reviewed"; // which list is shown: "reviewed" or "maybe"
-  let showingCover = false; // panel is showing this job's cover letter
-  let coverJobId = null; // the job the shown letter belongs to (stale guard)
-  let coverLang = "en"; // language of the letter to fetch
+  let lastHeader = { title: "Job Summary", company: "" }; // panel başlık durumu
+  let userClosed = false; // kullanıcı paneli kapattıysa yeniden açma
+  let showingList = false; // panel özet yerine bir işaret listesi gösteriyor
+  let listKind = "reviewed"; // hangi liste gösteriliyor: "reviewed" ya da "maybe"
+  let showingCover = false; // panel bu ilanın mektubunu gösteriyor
+  let coverJobId = null; // gösterilen mektubun ait olduğu ilan (bayatlık koruması)
+  let coverLang = "en"; // getirilecek mektubun dili
 
-  // True while the body belongs to something other than the summary. Every renderer
-  // checks this: LinkedIn mutations drive maybeUpdate() every 700ms, which would
-  // otherwise overwrite the list/letter with a summary or a spinner.
+  // Gövde özetten başka bir şeye aitken true. Her çizici bunu kontrol eder: LinkedIn
+  // değişiklikleri maybeUpdate()'i her 700 ms'de tetikler; yoksa liste/mektup bir özetle ya da
+  // dönen simgeyle ezilirdi.
   function bodyLocked() {
     return showingList || showingCover;
   }
 
-  // Per-job summary cache: returning to a job shows it instantly.
+  // İlan başına özet önbelleği: bir ilana dönünce özet anında görünür.
   const CACHE = new Map(); // jobId -> { summary, description }
   const CACHE_LIMIT = 60;
 
   function cacheSet(jobId, summary, description) {
     CACHE.set(jobId, { summary, description });
     if (CACHE.size > CACHE_LIMIT) {
-      CACHE.delete(CACHE.keys().next().value); // drop oldest
+      CACHE.delete(CACHE.keys().next().value); // en eskiyi at
     }
   }
 
-  // --- Persistent "reviewed" memory -----------------------------------------
-  // LinkedIn's dismiss (X) state is per-search, so the same posting reappears
-  // un-dismissed in other job-alert lists. We keep our own memory keyed by the
-  // canonical posting id (stable across searches) in chrome.storage.local, and
-  // warn when a reviewed posting shows up again.
+  // --- Kalıcı "incelendi" hafızası -----------------------------------------
+  // LinkedIn'in kapatma (X) durumu aramaya özel; aynı ilan başka iş alarmı listelerinde
+  // kapatılmamış olarak yeniden çıkar. Kanonik ilan no'suna (aramalar arasında sabit) göre
+  // anahtarlı kendi hafızamızı chrome.storage.local'da tutar ve incelenmiş bir ilan yeniden
+  // çıkınca uyarırız.
 
-  // A marker store persists a set of job ids (with light metadata) in
-  // chrome.storage.local under one key, pruned to a cap by timestamp. We keep two:
-  // "reviewed" (every posting already looked at) and "maybe" (a shortlist of stack-fit
-  // jobs to revisit and possibly add to Huntr later). They are INDEPENDENT — a job can
-  // be in either, both, or neither.
-  const MARKER_LIMIT = 3000; // cap per store; prune oldest by timestamp on write
+  // Bir işaret deposu, bir dizi ilan no'sunu (hafif üst veriyle) chrome.storage.local'da tek bir
+  // anahtar altında saklar; zaman damgasına göre bir üst sınıra budanır. İki tane tutarız:
+  // "reviewed" (zaten bakılmış her ilan) ve "maybe" (sonra dönülecek, stack'i uyan ilanların
+  // kısa listesi). BİRBİRİNDEN BAĞIMSIZDIRLAR — bir ilan ikisinden birinde, ikisinde ya da
+  // hiçbirinde olabilir.
+  const MARKER_LIMIT = 3000; // depo başına üst sınır; yazarken en eskileri zaman damgasına göre buda
 
   function makeMarkerStore(storeKey, name) {
     let map = {}; // jobId -> { t, title, company, fit, seenOnly }
@@ -116,14 +114,14 @@
         chrome.storage.local.get(storeKey, (res) => {
           if (chrome.runtime.lastError) return;
           map = (res && res[storeKey]) || {};
-          scheduleUpdate(); // reflect loaded state in the list/panel
+          scheduleUpdate(); // yüklenen durumu listeye/panele yansıt
         });
       } catch (_) {
-        /* storage unavailable; feature just stays inert */
+        /* depolama kullanılamıyor; özellik sadece etkisiz kalır */
       }
     }
 
-    // Keep in sync if another tab changes the store.
+    // Başka bir sekme depoyu değiştirirse senkron kal.
     try {
       chrome.storage.onChanged.addListener((changes, area) => {
         if (area === "local" && changes[storeKey]) {
@@ -132,7 +130,7 @@
         }
       });
     } catch (_) {
-      /* ignore */
+      /* yok say */
     }
 
     function persist() {
@@ -146,7 +144,7 @@
       try {
         chrome.storage.local.set({ [storeKey]: map });
       } catch (_) {
-        /* ignore */
+        /* yok say */
       }
     }
 
@@ -154,12 +152,12 @@
       if (!jobId) return;
       const existing = map[jobId];
       map[jobId] = {
-        t: existing && existing.t ? existing.t : Date.now(), // keep first-seen time
+        t: existing && existing.t ? existing.t : Date.now(), // ilk görülme zamanını koru
         title: (meta && meta.title) || (existing && existing.title) || "",
         company: (meta && meta.company) || (existing && existing.company) || "",
         fit: meta && meta.fit != null ? meta.fit : existing ? existing.fit : null,
-        // Sticky once cleared: a job summarized later must never fall back to
-        // warning-only, so an explicit `false` always wins over a stored `true`.
+        // Bir kez temizlenince kalıcı: sonradan özetlenen bir ilan asla yalnızca-uyarıya geri
+        // düşmemeli, yani açık bir `false` saklı bir `true`'ya her zaman üstün gelir.
         seenOnly:
           meta && meta.seenOnly != null
             ? !!meta.seenOnly
@@ -190,20 +188,20 @@
 
   const reviewed = makeMarkerStore("jobsum_reviewed", "reviewed");
   const maybe = makeMarkerStore("jobsum_maybe", "maybe");
-  // Postings already appended to the sheet via "Ekle". A local mirror of a server-side
-  // fact, so revisiting a job renders the button as done without downloading the sheet.
-  // If the store is ever lost, clicking again just returns status "exists" and re-marks.
+  // "Ekle" ile sheet'e zaten eklenmiş ilanlar. Sunucu tarafındaki bir gerçeğin yerel aynası;
+  // böylece bir ilana dönünce buton sheet indirilmeden "eklendi" olarak çizilir. Depo bir gün
+  // kaybolursa yeniden tıklamak sadece "exists" döner ve yeniden işaretler.
   const added = makeMarkerStore("jobsum_added", "added");
   const isAdded = added.has;
 
-  // Thin aliases keep the (many) reviewed call sites readable.
+  // İnce takma adlar (çok sayıdaki) reviewed çağrı yerlerini okunur tutar.
   const isReviewed = reviewed.has;
   const markReviewed = reviewed.mark;
   const unmarkReviewed = reviewed.unmark;
   const isMaybe = maybe.has;
   const isSeenOnly = (jobId) => !!(reviewed.get(jobId) || {}).seenOnly;
 
-  // Turkish relative time for "you saw this N ago".
+  // "bunu N önce gördün" için Türkçe göreli zaman.
   function relativeTime(t) {
     const mins = Math.max(0, Math.floor((Date.now() - t) / 60000));
     if (mins < 1) return "az önce";
@@ -216,14 +214,13 @@
     return `${weeks} hafta önce`;
   }
 
-  // --- Helpers ---
+  // --- Yardımcılar ---
 
-  // LinkedIn's newer jobs UI renders the job pane inside open shadow roots and
-  // same-origin iframes, which plain document.querySelector / TreeWalker cannot
-  // reach. collectRoots() returns the main document plus every nested open
-  // shadow root and readable (same-origin) iframe document, so all the text
-  // extraction below can pierce those boundaries. Cross-origin iframes throw on
-  // access and are silently skipped.
+  // LinkedIn'in yeni iş arayüzü ilan panelini açık shadow root'ların ve aynı kökenli
+  // iframe'lerin içinde çizer; düz document.querySelector / TreeWalker oraya ulaşamaz.
+  // collectRoots() ana belgeyi artı iç içe her açık shadow root'u ve okunabilir (aynı kökenli)
+  // iframe belgesini döndürür; böylece aşağıdaki bütün metin çıkarma bu sınırları delebilir.
+  // Farklı kökenli iframe'ler erişimde hata fırlatır ve sessizce atlanır.
   function collectRoots() {
     const roots = [document];
     for (let i = 0; i < roots.length; i++) {
@@ -241,7 +238,7 @@
           try {
             doc = el.contentDocument;
           } catch (_) {
-            /* cross-origin; not readable */
+            /* farklı köken; okunamaz */
           }
           if (doc) roots.push(doc);
         }
@@ -256,22 +253,22 @@
       try {
         el = root.querySelector(selector);
       } catch (_) {
-        /* invalid selector for this root type; skip */
+        /* bu kök türü için geçersiz seçici; atla */
       }
       if (el) return el;
     }
     return null;
   }
 
-  // Like deepQuery, but returns EVERY match across all roots. The card decoration
-  // needs all of them, not the first one.
+  // deepQuery gibi, ama bütün köklerdeki HER eşleşmeyi döndürür. Kart süslemesinin ilki değil,
+  // hepsi lazım.
   function deepQueryAll(selector, roots) {
     const out = [];
     for (const root of roots || collectRoots()) {
       try {
         root.querySelectorAll(selector).forEach((el) => out.push(el));
       } catch (_) {
-        /* invalid selector for this root type; skip */
+        /* bu kök türü için geçersiz seçici; atla */
       }
     }
     return out;
@@ -289,17 +286,17 @@
     return "";
   }
 
-  // The description is read by finding the longest VISIBLE text node on the page
-  // (almost always a job-description paragraph), then climbing to the largest container
-  // that still looks like a content pane (not the whole page, not the results list).
-  // LinkedIn hides JSON blobs in <code> tags, so hidden nodes must be skipped.
+  // Açıklama, sayfadaki en uzun GÖRÜNÜR metin düğümü bulunarak okunur (neredeyse her zaman bir
+  // ilan açıklaması paragrafı), sonra hâlâ bir içerik paneline benzeyen en büyük kapsayıcıya
+  // tırmanılır (bütün sayfa değil, sonuç listesi değil). LinkedIn JSON yığınlarını <code>
+  // etiketlerinde saklar; bu yüzden gizli düğümler atlanmalı.
   function findLongestVisibleTextEl() {
     let best = null;
     let bestLen = 0;
     for (const root of collectRoots()) {
-      const scope = root.body || root; // Document -> body; ShadowRoot -> itself
+      const scope = root.body || root; // Document -> body; ShadowRoot -> kendisi
       if (!scope) continue;
-      const doc = root.ownerDocument || root; // owning Document for createTreeWalker
+      const doc = root.ownerDocument || root; // createTreeWalker için sahip Document
       let walker;
       try {
         walker = doc.createTreeWalker(scope, NodeFilter.SHOW_TEXT);
@@ -313,9 +310,8 @@
         const len = node.textContent.trim().length;
         if (len <= bestLen) continue;
         if (parent.closest("#jobsum-panel,code,script,style,noscript,template")) continue;
-        // A LIST card is never the description — skip it, or the longest text on a
-        // search-results page becomes some other job's card title and the heuristic
-        // climbs into the wrong posting.
+        // Bir LİSTE kartı asla açıklama değildir — atla; yoksa bir arama sonuçları sayfasındaki en
+        // uzun metin başka bir ilanın kart başlığı olur ve sezgisel yöntem yanlış ilana tırmanır.
         if (parent.closest(LIST_CARD_SELECTOR)) continue;
         if (parent.checkVisibility && !parent.checkVisibility()) continue;
         best = parent;
@@ -325,53 +321,52 @@
     return { el: best, len: bestLen };
   }
 
-  // On the new /jobs/search-results UI a freshly clicked job renders its description
-  // in the right pane a beat AFTER the click. Read the page during that gap and the
-  // description selectors miss, so the longest-text heuristic climbs into LinkedIn's
-  // global nav + filter rail instead ("Skip to main content / Home / My Network / …").
-  // That chrome is not a posting: the backend returns an empty summary for it. "Skip to
-  // main content" never appears in a real description, so treat any text carrying the
-  // nav signature as "not loaded yet" and keep waiting for the real description.
+  // Yeni /jobs/search-results arayüzünde yeni tıklanan bir ilan açıklamasını sağ panelde
+  // tıklamadan biraz SONRA çizer. O aralıkta sayfayı okursan açıklama seçicileri ıskalar ve en
+  // uzun metin yöntemi bunun yerine LinkedIn'in genel menüsüne + filtre çubuğuna tırmanır
+  // ("Skip to main content / Home / My Network / …").
+  // Bu kabuk bir ilan değildir: backend onun için boş bir özet döndürür. "Skip to main content"
+  // gerçek bir açıklamada asla geçmez; bu yüzden menü imzasını taşıyan her metni "henüz
+  // yüklenmedi" say ve gerçek açıklamayı beklemeye devam et.
   function looksLikePageChrome(text) {
     if (!text) return false;
     const head = text.slice(0, 600).toLowerCase();
-    // LinkedIn's own UI strings that never appear in a job posting. The old-class
-    // selectors, on the hashed new UI, variously grab the top nav rail OR the
-    // left filter/results rail — both must be recognised so they get rejected.
+    // LinkedIn'in bir iş ilanında asla geçmeyen kendi arayüz metinleri. Eski sınıf seçicileri,
+    // hash'li yeni arayüzde bazen üst menü çubuğunu BAZEN sol filtre/sonuç çubuğunu yakalıyor —
+    // ikisi de reddedilsin diye ikisi de tanınmalı.
     return (
-      head.includes("skip to main content") || // top nav rail
-      head.includes("ai-powered search is in beta") || // results header
-      head.includes("how promoted jobs are ranked") || // results header
-      (head.includes("experience level") && head.includes("employment type")) || // filter rail
-      (head.includes("my network") && head.includes("notifications")) // top nav rail
+      head.includes("skip to main content") || // üst menü çubuğu
+      head.includes("ai-powered search is in beta") || // sonuç başlığı
+      head.includes("how promoted jobs are ranked") || // sonuç başlığı
+      (head.includes("experience level") && head.includes("employment type")) || // filtre çubuğu
+      (head.includes("my network") && head.includes("notifications")) // üst menü çubuğu
     );
   }
 
-  // Empty out a tier's result when it is page chrome, so the extraction chain falls
-  // through to the next tier instead of accepting the nav rail.
+  // Bir katmanın sonucu sayfa kabuğuysa onu boşalt; böylece çıkarma zinciri menü çubuğunu kabul
+  // etmek yerine bir sonraki katmana düşer.
   const nonChrome = (text) => (looksLikePageChrome(text) ? "" : text || "");
 
   function heuristicDescription() {
     const { el: start, len } = findLongestVisibleTextEl();
-    // Low seed threshold: the new UI splits the description into many short lines, so
-    // its longest single node can be under a sentence. The 300-char floor on the
-    // assembled container below is what actually guards against grabbing junk.
+    // Düşük tohum eşiği: yeni arayüz açıklamayı birçok kısa satıra böler, yani en uzun tek düğümü
+    // bir cümleden kısa olabilir. Çöp yakalamaya karşı asıl koruma, aşağıda birleştirilmiş
+    // kapsayıcıdaki 300 karakterlik tabandır.
     if (!start || len < 50) return "";
     let el = start;
     while (el.parentElement && el.parentElement !== document.body) {
       const parent = el.parentElement;
       const parentText = (parent.innerText || "").trim();
-      if (parentText.length > 12000) break; // don't swallow the whole page
-      // Stop before a parent that folds in the global nav / filter rail: on the new UI
-      // the clean description container's ancestor also holds the left chrome, and
-      // climbing into it makes the whole result read as page chrome (then rejected,
-      // and the job times out). Keep the clean child instead.
+      if (parentText.length > 12000) break; // bütün sayfayı yutma
+      // Genel menüyü / filtre çubuğunu da içine alan bir ebeveynden önce dur: yeni arayüzde temiz
+      // açıklama kapsayıcısının atası sol kabuğu da tutar ve ona tırmanmak bütün sonucu sayfa
+      // kabuğu gibi okutur (sonra reddedilir ve ilan zaman aşımına uğrar). Onun yerine temiz
+      // çocuğu tut.
       if (looksLikePageChrome(parentText)) break;
-      // Stop before a parent that also contains the left RESULTS LIST. The detail pane
-      // and the job-card list share an ancestor; climbing into it made the result begin
-      // with the stack of cards ("Senior Backend Developer … GönderAL … Viewed …") — the
-      // model then summarized the list, not the posting. The detail pane holds no list
-      // cards, so a parent that does means we've climbed out of it: keep the child.
+      // Sol SONUÇ LİSTESİNİ de içeren bir ebeveynden önce dur. Detay paneli ve ilan kartı listesi bir
+      // atayı paylaşır; ona tırmanmak sonucun kart yığınıyla başlamasına yol açtı ("Senior Backend
+      // Developer … GönderAL … Viewed …") — model ilanı değil listeyi özetledi. Detay panelinde liste
+      // kartı yoktur; yani kart içeren bir ebeveyn, dışarı tırmandığımız anlamına gelir: çocuğu tut.
       if (parent.querySelector(LIST_CARD_SELECTOR)) break;
       el = parent;
     }
@@ -379,10 +374,10 @@
     return text.length >= 300 ? text.slice(0, 15000) : "";
   }
 
-  // Log the DOM around the longest visible text so failing selectors can be
-  // fixed from a pasted console dump. Gated behind DEBUG for the routine per-job
-  // path; the description-timeout path calls it unconditionally (a stuck panel is a
-  // real failure worth one diagnostic, not opt-in noise).
+  // Başarısız seçiciler yapıştırılmış bir konsol dökümünden düzeltilebilsin diye en uzun görünür
+  // metnin etrafındaki DOM'u logla. Olağan ilan başına yolda DEBUG'a bağlı; açıklama zaman aşımı
+  // yolu ise koşulsuz çağırır (takılmış bir panel, isteğe bağlı gürültü değil, bir tanıyı hak eden
+  // gerçek bir hatadır).
   function logDomDiagnosis() {
     const { el: best, len } = findLongestVisibleTextEl();
     if (!best) {
@@ -420,28 +415,27 @@
       `DIAG iframes=${totalIframes} (readable=${readableIframes}) ` +
         `shadowRoots=${shadows} rootsSearched=${roots.length}`
     );
-    // Card side of the same DOM: a layout that hides the description usually also
-    // hides the cards, and a zero here explains a missing "görüldü" badge.
+    // Aynı DOM'un kart tarafı: açıklamayı saklayan bir yerleşim genellikle kartları da saklar ve
+    // buradaki sıfır, eksik bir "görüldü" rozetini açıklar.
     const deepCards = deepQueryAll(CARD_SELECTOR, roots).length;
     const docCards = document.querySelectorAll(CARD_SELECTOR).length;
     console.warn(LOG, `DIAG cards deep=${deepCards} (document-only=${docCards})`);
   }
 
-  // After the extension is reloaded/updated, the content script already injected
-  // in open tabs becomes orphaned: its runtime is dead but its interval/observer
-  // keep running, spamming "chrome-extension://invalid/" errors every tick. Detect
-  // that and self-destruct (see teardown() at the bottom).
+  // Eklenti yeniden yüklendiğinde/güncellendiğinde açık sekmelere zaten enjekte edilmiş content
+  // script yetim kalır: çalışma zamanı ölüdür ama zamanlayıcısı/gözlemcisi çalışmaya devam eder
+  // ve her tikte "chrome-extension://invalid/" hatalarıyla konsolu doldurur. Bunu algıla ve
+  // kendini imha et (bkz. en alttaki teardown()).
   function extensionAlive() {
     try {
       return typeof chrome !== "undefined" && !!chrome.runtime && !!chrome.runtime.id;
     } catch (_) {
-      return false; // accessing chrome.runtime throws once the context is gone
+      return false; // bağlam gidince chrome.runtime'a erişmek hata fırlatır
     }
   }
 
-  // The content script is injected on every LinkedIn page (so it survives SPA
-  // navigation into the jobs view in any tab), but the panel and its work only
-  // belong on the jobs pages.
+  // Content script her LinkedIn sayfasına enjekte edilir (böylece herhangi bir sekmede iş görünümüne
+  // SPA gezinmesinden sağ çıkar), ama panel ve işi yalnızca iş sayfalarına aittir.
   function isJobsPage() {
     return location.pathname.startsWith("/jobs/");
   }
@@ -451,8 +445,8 @@
     const fromUrl = params.get("currentJobId");
     if (fromUrl) return fromUrl;
 
-    // Standalone job page (/jobs/view/<id>/…): the id lives in the path, and
-    // there is no list card to read it from.
+    // Tek başına ilan sayfası (/jobs/view/<id>/…): no yolun içindedir ve okunacak bir liste
+    // kartı yoktur.
     const fromPath = location.pathname.match(/\/jobs\/view\/(\d+)/);
     if (fromPath) return fromPath[1];
 
@@ -468,26 +462,26 @@
     return null;
   }
 
-  // How a job card announces which posting it is. The old UI tags it with data-job-id;
-  // the new /jobs/search-results UI has hashed classes, no data-job-id and no posting
-  // link inside the card — but it does carry componentkey="job-card-component-ref-<id>".
+  // Bir ilan kartının hangi ilan olduğunu nasıl bildirdiği. Eski arayüz onu data-job-id ile
+  // etiketler; yeni /jobs/search-results arayüzünde hash'li sınıflar var, data-job-id yok ve
+  // kartın içinde ilan linki yok — ama componentkey="job-card-component-ref-<id>" taşıyor.
   const CARD_SELECTOR =
     '[data-job-id], [data-occludable-job-id], [componentkey^="job-card-component-ref-"]';
-  // The subset that is ALWAYS a left-list card. Excludes data-job-id on purpose: the
-  // right-hand details pane can carry it, and the description heuristic must not treat
-  // that pane as a list card to skip.
+  // HER ZAMAN sol liste kartı olan alt küme. data-job-id'yi bilerek dışarıda bırakır: sağdaki
+  // detay paneli de onu taşıyabilir ve açıklama sezgisi o paneli atlanacak bir liste kartı
+  // saymamalı.
   const LIST_CARD_SELECTOR =
     '[data-occludable-job-id], [componentkey^="job-card-component-ref-"]';
   const JOB_LINK = 'a[href*="/jobs/view/"]';
 
-  // The job card that owns a clicked control. Walks the composed path, which crosses
-  // the shadow-root boundaries that Element.closest() cannot.
+  // Tıklanan bir kontrolün sahibi olan ilan kartı. Element.closest()'un geçemediği shadow root
+  // sınırlarını aşan composed path'i dolaşır.
   function cardFrom(node, path) {
     const tagged = node.closest && node.closest(CARD_SELECTOR);
     if (tagged) return tagged;
-    // Last resort for a card shape we don't recognise: the widest ancestor holding
-    // EXACTLY ONE posting link. More than one means we have climbed out of the card
-    // into the results list, where the first link belongs to some other job.
+    // Tanımadığımız bir kart biçimi için son çare: TAM OLARAK BİR ilan linki tutan en geniş ata.
+    // Birden fazla, karttan sonuç listesine tırmandığımız anlamına gelir; orada ilk link başka bir
+    // ilana aittir.
     let widest = null;
     for (const el of path && path.length ? path : ancestorsOf(node)) {
       if (!el || el.nodeType !== 1 || !el.querySelectorAll) continue;
@@ -520,11 +514,11 @@
     return match ? match[1] : null;
   }
 
-  // Best-effort title/company from a job card. The new UI prints the title twice — once
-  // for screen readers, prefixed with state ("Selected, <title> (Verified job)"), once
-  // visually — and whether those land on one innerText line or two depends on CSS. So
-  // read the title from the visible span when it exists, and take as the company the
-  // first line that isn't just the title again.
+  // Bir ilan kartından best-effort başlık/şirket. Yeni arayüz başlığı iki kez yazar — bir kez
+  // ekran okuyucular için durum önekiyle ("Selected, <title> (Verified job)"), bir kez görsel
+  // olarak — ve bunların tek bir innerText satırına mı iki satıra mı düştüğü CSS'e bağlı. Bu
+  // yüzden başlığı varsa görünür span'dan oku ve şirket olarak başlığın tekrarı olmayan ilk
+  // satırı al.
   function cardMeta(card) {
     if (!card) return {};
     const lines = (card.innerText || "")
@@ -539,16 +533,16 @@
     return { title, company };
   }
 
-  // Detect clicks on LinkedIn's own dismiss (X) / undo (↩️) buttons. aria-label
-  // is LinkedIn's most stable signal (the CSS classes are hashed). The panel
-  // toggle is the reliable fallback if these patterns miss a locale.
+  // LinkedIn'in kendi kapatma (X) / geri al (↩️) butonlarına tıklamaları algıla. aria-label
+  // LinkedIn'in en kararlı işaretidir (CSS sınıfları hash'li). Bu desenler bir dili kaçırırsa
+  // panel düğmesi güvenilir yedektir.
   const DISMISS_RE = /dismiss|yoksay|gizle|kapat|not interested|ilgilenmiyorum/i;
   const UNDO_RE = /undo|geri al|geri getir/i;
-  const warnedLabels = new Set(); // distinct unmatched aria-labels, capped
+  const warnedLabels = new Set(); // farklı eşleşmeyen aria-label'lar, üst sınırlı
 
   function onDocClick(event) {
-    // composedPath() sees through shadow roots; event.target is retargeted to the
-    // shadow HOST, so .closest("button") would miss the new UI's dismiss button.
+    // composedPath() shadow root'ların içini görür; event.target shadow HOST'a yeniden hedeflenir,
+    // yani .closest("button") yeni arayüzün kapatma butonunu kaçırırdı.
     const path =
       typeof event.composedPath === "function" ? event.composedPath() : [];
     const btn =
@@ -559,7 +553,7 @@
     const jobId = cardJobId(card);
     const label = (btn.getAttribute("aria-label") || btn.title || "").trim();
     if (!jobId) {
-      // Not a button inside a job card — unless we simply failed to resolve one.
+      // Bir ilan kartının içinde buton değil — meğer ki sadece çözemediysek.
       if (DEBUG && (UNDO_RE.test(label) || DISMISS_RE.test(label)))
         console.warn(LOG, "dismiss/undo click but no job id resolved:", label);
       return;
@@ -567,15 +561,15 @@
     if (UNDO_RE.test(label)) {
       unmarkReviewed(jobId);
     } else if (DISMISS_RE.test(label)) {
-      // Dismissed straight from the list, before any summary existed: remember that,
-      // so re-encountering the job shows the warning alone and never costs a model call.
+      // Herhangi bir özet olmadan doğrudan listeden kapatıldı: bunu hatırla; böylece ilanla yeniden
+      // karşılaşınca yalnızca uyarı gösterilir ve asla bir model çağrısına mal olmaz.
       markReviewed(jobId, {
         ...cardMeta(card),
         fit: cachedFit(jobId),
         seenOnly: !CACHE.get(jobId),
       });
     } else if (label && warnedLabels.size < 8 && !warnedLabels.has(label)) {
-      // Help tune DISMISS_RE/UNDO_RE for the user's locale during verification.
+      // Doğrulama sırasında DISMISS_RE/UNDO_RE'yi kullanıcının diline göre ayarlamaya yardım et.
       warnedLabels.add(label);
       console.warn(LOG, "card button click, unmatched aria-label:", label);
     }
@@ -586,9 +580,8 @@
     return c && c.summary ? c.summary.fit_score : null;
   }
 
-  // Title/company/fit for the job on screen: the summary is authoritative, the panel
-  // header is the fallback — minus its static "Job Summary" placeholder, which must
-  // never travel to the sheet's L column.
+  // Ekrandaki ilanın başlığı/şirketi/uyumu: özet esastır, panel başlığı yedektir — eksi onun statik
+  // "Job Summary" yer tutucusu; o asla sheet'in L sütununa gitmemeli.
   function jobMeta(jobId) {
     const c = CACHE.get(jobId);
     const headTitle = lastHeader.title === "Job Summary" ? "" : lastHeader.title;
@@ -599,7 +592,7 @@
     };
   }
 
-  // --- Panel: appended under <html>, re-created if removed ---
+  // --- Panel: <html> altına eklenir, silinirse yeniden oluşturulur ---
 
   function buildPanel() {
     const panel = document.createElement("div");
@@ -639,11 +632,11 @@
     return panel;
   }
 
-  // --- Marker list views ----------------------------------------------------
-  // Two header buttons toggle a list of marked postings (title/company/fit/when)
-  // with a link to LinkedIn's canonical job URL — useful when a marked job can no
-  // longer be found via search. "Liste" shows reviewed jobs; "Olabilir" shows the
-  // stack-fit shortlist to revisit later.
+  // --- İşaret listesi görünümleri ----------------------------------------------------
+  // İki başlık butonu, işaretlenmiş ilanların (başlık/şirket/uyum/ne zaman) listesini LinkedIn'in
+  // kanonik ilan URL'sine linkle aç/kapa yapar — işaretli bir ilan aramayla artık bulunamadığında
+  // işe yarar. "Liste" incelenen ilanları, "Olabilir" sonra dönülecek stack'i uyan kısa listeyi
+  // gösterir.
 
   function markerJobUrl(jobId) {
     return `https://www.linkedin.com/jobs/view/${encodeURIComponent(jobId)}/`;
@@ -692,15 +685,15 @@
         e.stopPropagation();
         store.unmark(btn.getAttribute("data-jid"));
         if (showingList) {
-          setBody(renderMarkerList(listKind)); // refresh the list in place
+          setBody(renderMarkerList(listKind)); // listeyi yerinde yenile
           attachListHandlers();
         }
       });
     });
   }
 
-  // Reflect which view is active on the header buttons. `jobIdArg` is the job the
-  // caller is rendering for; pass it whenever you have it (see the "Ekle" note below).
+  // Hangi görünümün etkin olduğunu başlık butonlarına yansıt. `jobIdArg` çağıranın çizdiği ilandır;
+  // elinde olduğunda her zaman geçir (aşağıdaki "Ekle" notuna bak).
   function updateHeaderButtons(panelArg, jobIdArg) {
     const panel = panelArg || document.getElementById("jobsum-panel");
     if (!panel) return;
@@ -711,16 +704,16 @@
     if (mb) mb.classList.toggle("is-active", showingList && listKind === "maybe");
     if (cb) cb.classList.toggle("is-active", showingCover);
 
-    // "Ekle" is not a view toggle — it reflects per-job state. buildPanel() restores the
-    // header from a static HTML string, so without this the label resets to "Ekle" on
-    // every rebuild. Skipped mid-flash so the transient label survives the 700ms poll.
+    // "Ekle" bir görünüm düğmesi değil — ilan başına durumu yansıtır. buildPanel() başlığı statik bir
+    // HTML metninden geri yükler; yani bu olmadan etiket her yeniden kurulumda "Ekle"ye döner.
+    // Geçici etiket 700 ms'lik yoklamadan sağ çıksın diye yanıp sönme sırasında atlanır.
     const ab = panel.querySelector("#jobsum-add");
     if (ab && !addBusy) {
-      // The id MUST come from the caller when there is one. renderReviewStatus runs at
-      // the top of maybeUpdate, BEFORE lastJobId is reassigned further down, so reading
-      // lastJobId here labels the button for the job we just left — and since that call
-      // is memoised by reviewRenderKey it never re-runs, leaving the wrong label stuck.
-      // Without a caller (user actions) the live page beats the last-summarized job.
+      // No, varsa çağırandan GELMELİ. renderReviewStatus maybeUpdate'in en başında, lastJobId aşağıda
+      // yeniden atanmadan ÖNCE çalışır; yani burada lastJobId'yi okumak butonu az önce ayrıldığımız
+      // ilana göre etiketler — ve o çağrı reviewRenderKey ile hafızaya alındığından bir daha çalışmaz,
+      // yanlış etiket takılı kalır. Çağıran yoksa (kullanıcı eylemleri) canlı sayfa son özetlenen
+      // ilandan üstündür.
       const jobId = jobIdArg !== undefined ? jobIdArg : getCurrentJobId() || lastJobId;
       const done = isAdded(jobId);
       ab.textContent = done ? "Eklendi ✓" : "Ekle";
@@ -729,7 +722,7 @@
     }
   }
 
-  // Back to the summary view from a list or the cover letter.
+  // Bir listeden ya da mektuptan özet görünümüne geri dön.
   function backToSummary() {
     showingList = false;
     showingCover = false;
@@ -741,12 +734,12 @@
   }
 
   function showList(kind) {
-    // Clicking the already-open list closes it and returns to the summary.
+    // Zaten açık listeye tıklamak onu kapatır ve özete döner.
     if (showingList && listKind === kind) {
       backToSummary();
       return;
     }
-    showingCover = false; // a list and a letter can't both own the body
+    showingCover = false; // bir liste ve bir mektup gövdeye aynı anda sahip olamaz
     coverJobId = null;
     showingList = true;
     listKind = kind;
@@ -755,8 +748,8 @@
     attachListHandlers();
   }
 
-  // Review status block (under the header): warning banner + mark/unmark toggle
-  // for the current job. Re-rendered only when the (job, reviewed) state changes.
+  // İnceleme durumu bloğu (başlığın altında): uyarı bandı + mevcut ilan için işaretle/kaldır
+  // düğmesi. Yalnızca (ilan, incelendi) durumu değişince yeniden çizilir.
   let reviewRenderKey = null;
   function renderReviewStatus(jobId) {
     const panel = ensurePanel();
@@ -765,9 +758,9 @@
     if (!slot) return;
 
     const key = `${jobId || ""}:${isReviewed(jobId)}:${isMaybe(jobId)}:${isAdded(jobId)}`;
-    if (key === reviewRenderKey) return; // nothing changed
+    if (key === reviewRenderKey) return; // hiçbir şey değişmedi
     reviewRenderKey = key;
-    updateHeaderButtons(panel, jobId); // the "Ekle" label is per-job state too
+    updateHeaderButtons(panel, jobId); // "Ekle" etiketi de ilan başına durumdur
 
     if (!jobId) {
       slot.className = "jobsum-review";
@@ -779,7 +772,7 @@
     const maybeNow = isMaybe(jobId);
     slot.className = reviewedNow ? "jobsum-review jobsum-review--seen" : "jobsum-review";
 
-    // Left side: the reviewed state (warning + undo, or a "mark reviewed" button).
+    // Sol taraf: incelendi durumu (uyarı + geri al, ya da "incelendi olarak işaretle" butonu).
     const reviewedHtml = reviewedNow
       ? `<span class="jobsum-review-text"><span class="jobsum-warn-icon">⚠</span> Bu ilanı ${escapeHtml(
           relativeTime(reviewed.get(jobId).t || Date.now())
@@ -787,14 +780,14 @@
          <button class="jobsum-review-btn jobsum-review-btn--undo" data-act="unreview" type="button">Geri al</button>`
       : `<button class="jobsum-review-btn" data-act="review" type="button">İncelendi</button>`;
 
-    // Right side: the independent "Olabilir" shortlist toggle.
+    // Sağ taraf: bağımsız "Olabilir" kısa liste düğmesi.
     const maybeHtml = `<button class="jobsum-review-btn jobsum-review-btn--maybe${
       maybeNow ? " is-active" : ""
     }" data-act="maybe" type="button">${maybeNow ? "Olabilir ✓" : "Olabilir"}</button>`;
 
     slot.innerHTML = reviewedHtml + maybeHtml;
 
-    // Snapshot title/company/fit so the marked entry shows up nicely in its list.
+    // İşaretli girdi listesinde düzgün görünsün diye başlık/şirket/uyumun anlık görüntüsünü al.
     const meta = () => jobMeta(jobId);
 
     slot.querySelectorAll("button").forEach((btn) => {
@@ -808,8 +801,8 @@
     });
   }
 
-  // Header: position title on top, company underneath (like LinkedIn's top card).
-  // Falls back to the static "Job Summary" label until a job is summarized.
+  // Başlık: pozisyon başlığı üstte, şirket altında (LinkedIn'in üst kartı gibi). Bir ilan
+  // özetlenene kadar statik "Job Summary" etiketine düşer.
   function setHeader(title, company) {
     lastHeader = {
       title: (title || "").trim() || "Job Summary",
@@ -829,9 +822,9 @@
       panel = buildPanel();
       document.documentElement.appendChild(panel);
       console.log(LOG, "panel added");
-      // Re-wire whichever view owns the body. buildPanel restores it from the saved
-      // HTML string, so without this its buttons come back as live-looking dead
-      // markup — the letter's Kopyala would silently do nothing.
+      // Gövdeye hangi görünüm sahipse onu yeniden bağla. buildPanel onu kaydedilmiş HTML metninden
+      // geri yükler; yani bu olmadan butonları canlı görünen ölü işaretleme olarak geri gelir —
+      // mektubun Kopyala'sı sessizce hiçbir şey yapmazdı.
       if (showingList) attachListHandlers();
       else if (showingCover) attachCoverHandlers();
     }
@@ -846,7 +839,7 @@
   }
 
   function showLoading() {
-    if (bodyLocked()) return; // don't clobber the list / letter view
+    if (bodyLocked()) return; // liste / mektup görünümünü ezme
     setBody(
       `<div class="jobsum-loading">
          <span class="jobsum-spinner" aria-hidden="true"></span>
@@ -860,8 +853,8 @@
     setBody(`<div class="jobsum-status jobsum-error">${escapeHtml(message)}</div>`);
   }
 
-  // A job dismissed from the list without ever being summarized. The "already reviewed"
-  // banner sits above this; the body only explains why there is nothing to show.
+  // Hiç özetlenmeden listeden kapatılmış bir ilan. "Zaten incelendi" bandı bunun üstünde durur;
+  // gövde yalnızca neden gösterilecek bir şey olmadığını açıklar.
   function showSeenOnly() {
     if (bodyLocked()) return;
     setBody(
@@ -871,13 +864,13 @@
 
   function renderSummary(data) {
     if (bodyLocked()) return;
-    // Prefer what Claude extracted from the posting; fall back to the DOM
-    // selectors (which only match LinkedIn's old UI).
+    // Claude'un ilandan çıkardığını tercih et; DOM seçicilerine düş (yalnızca LinkedIn'in eski
+    // arayüzüyle eşleşirler).
     setHeader(
       data.job_title || firstMatchText(SELECTORS.title),
       data.company || firstMatchText(SELECTORS.company)
     );
-    // Compose the single-row work field: "on-site — İstanbul tercihli".
+    // Tek satırlık çalışma alanını oluştur: "on-site — İstanbul tercihli".
     const workType =
       data.work_type && data.work_type !== "unspecified" ? data.work_type : "";
     data = { ...data, work: [workType, data.work_type_note].filter(Boolean).join(" — ") };
@@ -899,7 +892,7 @@
     );
   }
 
-  // Fit badge at the top: colored %NN + one-line reason. Hidden when no score.
+  // Üstte uyum rozeti: renkli %NN + tek satırlık gerekçe. Puan yoksa gizli.
   function renderFit(score, reason) {
     const n = Math.round(Number(score) || 0);
     if (n <= 0) return "";
@@ -917,19 +910,19 @@
       </div>`;
   }
 
-  // Stack: a chip per technology — green when the candidate knows it, red when they
-  // don't (`stack_known`, computed by the backend against the CV + past projects).
+  // Stack: teknoloji başına bir çip — aday biliyorsa yeşil, bilmiyorsa kırmızı (`stack_known`,
+  // backend'in CV + geçmiş projelere göre hesapladığı).
   //
-  // A group with several options is a choice the posting itself offers ("React, Next.js
-  // veya benzeri"); it gets its own row, labelled "veya". Everything else is a plain
-  // requirement, and those all share one row that simply wraps at the panel's width —
-  // one row each would waste most of the panel.
+  // Birkaç seçenekli bir grup, ilanın kendisinin sunduğu bir seçimdir ("React, Next.js veya
+  // benzeri"); kendi satırını alır ve "veya" diye etiketlenir. Geri kalan her şey düz bir
+  // gereksinimdir ve hepsi panel genişliğinde kayan tek bir satırı paylaşır — her birine bir satır
+  // panelin çoğunu boşa harcardı.
   function renderStack(groups, known) {
     if (!Array.isArray(groups) || groups.length === 0) return null;
 
     const chip = (option, flag) => {
-      // No flag at all (no candidate profile on the backend): stay neutral rather
-      // than paint every requirement red.
+      // Hiç bayrak yok (backend'de aday profili yok): her gereksinimi kırmızıya boyamak yerine
+      // nötr kal.
       const state = typeof flag === "boolean" ? (flag ? "known" : "missing") : "";
       const cls = state ? ` jobsum-chip--${state}` : "";
       return `<span class="jobsum-chip${cls}">${escapeHtml(String(option))}</span>`;
@@ -982,10 +975,10 @@
     return div.innerHTML;
   }
 
-  // True when a backend summary carries nothing worth showing — no header, no fit, no
-  // stack, no field. This happens when the text we scraped was not actually a posting
-  // (the model then fills every field empty), which on some layouts is the ONLY sign
-  // that our extraction grabbed the wrong container. Treated like a read failure.
+  // Bir backend özeti gösterilmeye değer hiçbir şey taşımıyorsa true — başlık yok, uyum yok, stack
+  // yok, alan yok. Okuduğumuz metin aslında bir ilan değilse olur (model o zaman her alanı boş
+  // doldurur); bazı yerleşimlerde çıkarmamızın yanlış kapsayıcıyı yakaladığının TEK işareti budur.
+  // Bir okuma hatası gibi ele alınır.
   function summaryIsBlank(data) {
     if (!data) return true;
     if (data.job_title || data.company) return false;
@@ -999,10 +992,10 @@
     );
   }
 
-  // --- Main flow ---
+  // --- Ana akış ---
 
-  // Call the backend (only our own localhost service). `type` picks the route —
-  // see ROUTES in background.js.
+  // Backend'i çağır (yalnızca kendi localhost servisimiz). `type` rotayı seçer —
+  // bkz. background.js'teki ROUTES.
   function callBackend(type, payload) {
     return new Promise((resolve, reject) => {
       if (!extensionAlive()) {
@@ -1025,7 +1018,7 @@
         reject(new Error("Extension reloaded. Refresh the page."));
         return;
       }
-      // Some Chrome builds return a Promise instead of using the callback.
+      // Bazı Chrome sürümleri callback kullanmak yerine bir Promise döndürür.
       if (sending && typeof sending.then === "function") {
         sending.then(handle, () =>
           reject(new Error("Extension messaging error. Reload the page."))
@@ -1046,18 +1039,18 @@
     });
   }
 
-  // The 3-tier description extraction, mirroring maybeUpdate's chain. Used by the
-  // "Yenile" button to re-read the current page's text before recomputing.
+  // maybeUpdate'in zincirini yansıtan 3 katmanlı açıklama çıkarma. "Yenile" butonu, yeniden
+  // hesaplamadan önce mevcut sayfanın metnini yeniden okumak için kullanır.
   function getDescription() {
-    // Heuristic only, chrome-rejected (see maybeUpdate for why the selectors are out).
+    // Yalnızca sezgisel, kabuk reddedilmiş (seçicilerin neden dışarıda olduğu için bkz. maybeUpdate).
     return nonChrome(heuristicDescription());
   }
 
-  // "Yenile": recompute the current job's summary from whatever text is on screen
-  // now (e.g. a cleaner /jobs/view page than the search page it was first cached
-  // from), bypassing both caches and overwriting them with the fresh result.
+  // "Yenile": mevcut ilanın özetini şu an ekrandaki metinden yeniden hesaplar (ör. ilk
+  // önbelleğe alındığı arama sayfasından daha temiz bir /jobs/view sayfası); iki önbelleği de
+  // atlar ve taze sonuçla üzerlerine yazar.
   function refreshSummary() {
-    if (bodyLocked()) return; // only meaningful in the summary view
+    if (bodyLocked()) return; // yalnızca özet görünümünde anlamlı
     const jobId = lastJobId || getCurrentJobId();
     if (!jobId) return;
     const description = getDescription();
@@ -1065,34 +1058,34 @@
       showError("Açıklama bulunamadı; özet yenilenemedi.");
       return;
     }
-    CACHE.delete(jobId); // drop the stale client-side copy
-    // An explicit "Yenile" overrides a list-dismissal: summarize it from now on.
+    CACHE.delete(jobId); // bayat istemci tarafı kopyayı at
+    // Açık bir "Yenile" listeden kapatmayı geçersiz kılar: bundan sonra özetle.
     if (isReviewed(jobId)) markReviewed(jobId, { seenOnly: false });
     lastShownDescription = description;
     showLoading();
     requestSummary(jobId, description, { force: true });
   }
 
-  // --- "Ekle": append this posting to the sheet ------------------------------
-  // The backend writes link (K) + title (L) + company (J) and leaves CV No (N) empty,
-  // which is exactly what the CV poller looks for. The posting text travels with it and
-  // is STAGED server-side: the poller still scrapes the page itself (primary source) and
-  // only falls back to this text when that scrape fails (expired posting / login wall).
+  // --- "Ekle": bu ilanı sheet'e ekle ------------------------------
+  // Backend link (K) + başlık (L) + şirket (J) yazar ve CV No'yu (N) boş bırakır. Kullanıcı
+  // başvururken B'yi "Üretilecek" yapınca CV agent'ı satırı alır. İlan metni de birlikte gider
+  // ve sunucu tarafında KAYDEDİLİR: CV agent'ı sayfayı yine kendisi okur (birincil kaynak); bu
+  // metin yalnızca ilan kalkmışsa ve kullanıcı --allow-staged isterse kullanılır.
 
   let addBusy = false;
   const ADD_TITLE = "İlanı tabloya ekle (CV için sheet'te B sütununu Üretilecek yap)";
 
   function addCurrentJob() {
-    if (addBusy) return; // a double-click must not append twice
+    if (addBusy) return; // bir çift tıklama iki kez eklememeli
     const btn = document.getElementById("jobsum-add");
     const jobId = lastJobId || getCurrentJobId();
     if (!jobId) {
       flashAdd(btn, "İlan yok");
       return;
     }
-    // lastShownDescription is the text the panel actually summarized for THIS job, so
-    // prefer it; re-read the DOM only when the summary hasn't landed yet (or belongs to
-    // another job). Sending nothing is still fine — the scrape is the primary source.
+    // lastShownDescription panelin BU ilan için gerçekten özetlediği metindir; onu tercih et.
+    // DOM'u yalnızca özet henüz gelmediyse (ya da başka bir ilana aitse) yeniden oku. Hiçbir şey
+    // göndermemek de sorun değil — birincil kaynak scrape.
     const fresh = jobId === lastJobId ? lastShownDescription : "";
     const description = fresh || getDescription() || "";
     const meta = jobMeta(jobId);
@@ -1104,7 +1097,7 @@
     }
     callBackend("ADD_JOB", {
       job_id: jobId,
-      url: markerJobUrl(jobId), // canonical /jobs/view/<id>/ — see _canonical_link
+      url: markerJobUrl(jobId), // kanonik /jobs/view/<id>/ — bkz. _canonical_link
       title: meta.title,
       company: meta.company,
       description,
@@ -1126,9 +1119,8 @@
       });
   }
 
-  // Transient label on the button (same pattern as the letter's "Kopyala"), then back to
-  // whatever the persisted state says. Never touches the body: a bookkeeping action must
-  // not clobber the summary the user is reading.
+  // Butonda geçici etiket (mektubun "Kopyala"sıyla aynı desen), sonra kalıcı durum ne diyorsa ona
+  // dön. Gövdeye asla dokunmaz: bir kayıt işlemi kullanıcının okuduğu özeti ezmemeli.
   function flashAdd(btn, label, tooltip) {
     if (!btn) {
       addBusy = false;
@@ -1144,14 +1136,14 @@
   }
 
   // --- Cover letter ---------------------------------------------------------
-  // The backend builds the letter from the CV and job description already saved on
-  // disk (keyed by the job's CV No in the sheet), so nothing is scraped here — the
-  // job id is the whole request. It is generated once per (job, language); asking
-  // again just re-reads the file.
+  // Backend mektubu diske zaten kaydedilmiş CV ve ilan metninden kurar (sheet'teki CV No'ya göre);
+  // yani burada hiçbir şey okunmaz — istek sadece ilan no'sudur. Mektup yoksa backend mektup
+  // agent'ını çalıştırır (~30-60 sn). (İlan, dil) başına bir kez üretilir; yeniden istemek sadece
+  // dosyayı yeniden okur.
 
   function toggleCover() {
     if (showingCover) {
-      backToSummary(); // clicking Mektup again closes the letter
+      backToSummary(); // Mektup'a yeniden tıklamak mektubu kapatır
       return;
     }
     const jobId = lastJobId || getCurrentJobId();
@@ -1163,9 +1155,9 @@
     fetchCover({ force: false });
   }
 
-  // Leave the letter behind when the user moves to another job. A letter belongs to
-  // exactly one posting, and maybeUpdate() blanks the header on a job switch — so a
-  // letter left up would sit under the wrong job's title and get copied by mistake.
+  // Kullanıcı başka bir ilana geçince mektubu bırak. Bir mektup tam olarak bir ilana aittir ve
+  // maybeUpdate() ilan değişince başlığı boşaltır — yani açık kalan bir mektup yanlış ilanın
+  // başlığı altında durur ve yanlışlıkla kopyalanırdı.
   function exitCoverView() {
     showingCover = false;
     coverJobId = null;
@@ -1183,7 +1175,7 @@
     );
     callBackend("COVER_LETTER", { job_id: jobId, lang: coverLang, force })
       .then((data) => {
-        if (!showingCover || coverJobId !== jobId) return; // user moved on
+        if (!showingCover || coverJobId !== jobId) return; // kullanıcı başka ilana geçti
         renderCover(data);
       })
       .catch((err) => {
@@ -1194,8 +1186,8 @@
       });
   }
 
-  // Write into the body WITHOUT the bodyLocked() guard the summary renderers use —
-  // those exist to stop the summary from clobbering this view, not the reverse.
+  // Gövdeye, özet çizicilerinin kullandığı bodyLocked() koruması OLMADAN yaz — o korumalar
+  // özetin bu görünümü ezmesini engellemek için var, tersini değil.
   function setCoverBody(html) {
     lastBodyHtml = html;
     const panel = ensurePanel();
@@ -1226,7 +1218,7 @@
     attachCoverHandlers();
   }
 
-  // Drop the `<!-- cv_no: ... -->` bookkeeping header the backend writes into the file.
+  // Backend'in dosyaya yazdığı `<!-- cv_no: ... -->` kayıt başlığını at.
   function coverBody(text) {
     return text.replace(/^\s*<!--[^>]*-->\s*/, "").trim();
   }
@@ -1238,8 +1230,8 @@
       btn.addEventListener("click", () => {
         const act = btn.getAttribute("data-cover");
         if (act === "copy") {
-          // Must run synchronously inside the click: copying after an awaited fetch
-          // spends the user activation and the write is rejected.
+          // Tıklamanın içinde senkron çalışmalı: beklenen bir fetch'ten sonra kopyalamak kullanıcı
+          // etkileşimini harcar ve yazma reddedilir.
           const text = panel.querySelector(".jobsum-cover-text");
           copyText(text ? text.textContent : "").then((ok) => {
             btn.textContent = ok ? "Kopyalandı ✓" : "Kopyalanamadı";
@@ -1262,7 +1254,7 @@
       await navigator.clipboard.writeText(text);
       return true;
     } catch (_) {
-      // Clipboard API can be blocked (permissions policy, no activation) — fall back.
+      // Pano API'si engellenmiş olabilir (izin politikası, etkileşim yok) — yedeğe düş.
       const ta = document.createElement("textarea");
       ta.value = text;
       ta.style.cssText = "position:fixed;left:-9999px;top:0;";
@@ -1285,8 +1277,8 @@
       title: firstMatchText(SELECTORS.title) || null,
       company: firstMatchText(SELECTORS.company) || null,
       location: firstMatchText(SELECTORS.location) || null,
-      job_id: jobId || null, // server caches by this so a job is summarized once
-      refresh: !!(opts && opts.force), // "Yenile": bypass + overwrite the cache
+      job_id: jobId || null, // sunucu buna göre önbelleğe alır, böylece bir ilan bir kez özetlenir
+      refresh: !!(opts && opts.force), // "Yenile": önbelleği atla + üzerine yaz
     };
 
     const seq = ++requestSeq;
@@ -1294,9 +1286,9 @@
 
     callBackend("SUMMARIZE", payload)
       .then((data) => {
-        // A blank summary means the text we scraped was not a real posting. Don't cache
-        // it (so a later Yenile / re-open can still succeed once the description loads),
-        // dump one diagnostic, and show the same retry hint as the load timeout.
+        // Boş bir özet, okuduğumuz metnin gerçek bir ilan olmadığı anlamına gelir. Önbelleğe alma (ki
+        // açıklama yüklenince sonraki bir Yenile / yeniden açma yine başarılı olabilsin), bir tanı dök
+        // ve yükleme zaman aşımıyla aynı yeniden deneme ipucunu göster.
         if (summaryIsBlank(data)) {
           if (seq !== requestSeq || jobId !== lastJobId) return;
           console.warn(
@@ -1309,7 +1301,7 @@
           return;
         }
         cacheSet(jobId, data, description);
-        if (seq !== requestSeq || jobId !== lastJobId) return; // switched jobs meanwhile
+        if (seq !== requestSeq || jobId !== lastJobId) return; // bu arada ilan değişti
         console.log(LOG, "summary received");
         renderSummary(data);
       })
@@ -1320,15 +1312,15 @@
       });
   }
 
-  // --- Reviewed-card decoration ---------------------------------------------
-  // LinkedIn's own dismissal is forgotten within a day: the same posting comes back
-  // looking untouched. Our own memory is permanent, so paint it onto the card —
-  // dimmed, a blue stripe down the left edge, and a "görüldü" badge by the X button.
+  // --- İncelenmiş kart süslemesi ---------------------------------------------
+  // LinkedIn'in kendi kapatması bir gün içinde unutulur: aynı ilan dokunulmamış görünerek geri
+  // gelir. Bizim hafızamız kalıcıdır; bu yüzden onu karta boya — soluk, sol kenar boyunca mavi bir
+  // şerit ve X butonunun yanında bir "görüldü" rozeti.
   //
-  // The styling is applied INLINE, not through panel.css, for two reasons: the
-  // manifest-declared stylesheet does not cascade into the shadow roots the new UI
-  // renders cards in, and a single class loses to LinkedIn's own rules. The classes
-  // below survive only as state/lookup markers.
+  // Stil panel.css üzerinden değil, SATIR İÇİ uygulanır; iki nedenle: manifest'te bildirilen
+  // stil sayfası yeni arayüzün kartları çizdiği shadow root'lara geçmez ve tek bir sınıf
+  // LinkedIn'in kendi kurallarına yenilir. Aşağıdaki sınıflar yalnızca durum/arama işaretleri
+  // olarak kalır.
   const SEEN_PROPS = ["opacity", "box-shadow", "position"];
   const BADGE_TEXT = "görüldü";
 
@@ -1344,11 +1336,11 @@
   function styleSeenCard(card, colors) {
     const s = card.style;
     s.setProperty("opacity", "0.5", "important");
-    // inset, so the stripe costs no layout (a border-left would shift the content).
+    // içe doğru, böylece şerit yerleşime mal olmaz (border-left içeriği kaydırırdı).
     s.setProperty("box-shadow", `inset 4px 0 0 ${colors.stripe}`, "important");
-    // The badge is absolute and needs a containing block. Read the card's natural
-    // position ONCE and cache it on the element: re-reading on a later tick would
-    // see the "relative" we just set and flip the decision back and forth forever.
+    // Rozet absolute ve bir kapsayıcı blok gerektirir. Kartın doğal konumunu BİR KEZ oku ve öğenin
+    // üzerinde önbelleğe al: sonraki bir tikte yeniden okumak az önce ayarladığımız "relative"i
+    // görür ve kararı sonsuza kadar ileri geri çevirirdi.
     if (card.__jobsumPos === undefined)
       card.__jobsumPos = getComputedStyle(card).position;
     if (card.__jobsumPos === "static")
@@ -1371,14 +1363,14 @@
     s.setProperty("font-size", "10px", "important");
     s.setProperty("font-weight", "600", "important");
     s.setProperty("line-height", "16px", "important");
-    // The badge sits over LinkedIn's X button — clicks must pass through to it.
+    // Rozet LinkedIn'in X butonunun üstünde durur — tıklamalar ona geçmeli.
     s.setProperty("pointer-events", "none", "important");
     return badge;
   }
 
-  // Our class and our badge are two independent leftovers — LinkedIn's own render
-  // can drop either one — so "is this card decorated?" must ask about both, or an
-  // undone job could stay dimmed (or badged) for good.
+  // Bizim sınıfımız ve rozetimiz birbirinden bağımsız iki kalıntı — LinkedIn'in kendi çizimi
+  // ikisinden birini düşürebilir — bu yüzden "bu kart süslü mü?" ikisini de sormalı; yoksa geri
+  // alınmış bir ilan sonsuza kadar soluk (ya da rozetli) kalabilir.
   function hasSeenDecoration(card) {
     return (
       card.classList.contains("jobsum-seen") ||
@@ -1393,17 +1385,16 @@
     if (b) b.remove();
   }
 
-  let seenCounts = ""; // last logged tally, so DEBUG only speaks on a change
+  let seenCounts = ""; // son loglanan sayım, böylece DEBUG yalnızca bir değişiklikte konuşur
 
-  // Re-applied every tick: LinkedIn virtualizes the list (cards mount/unmount) and
-  // re-renders a card's children in place, which silently drops our badge. Writing
-  // the same inline styles again is free and — unlike appending the badge — fires no
-  // mutation, so it cannot feed the observer that calls us.
+  // Her tikte yeniden uygulanır: LinkedIn listeyi sanallaştırır (kartlar takılıp çıkarılır) ve bir
+  // kartın çocuklarını yerinde yeniden çizer; bu da rozetimizi sessizce düşürür. Aynı satır içi
+  // stilleri yeniden yazmak bedavadır ve — rozeti eklemenin aksine — hiçbir mutasyon tetiklemez,
+  // yani bizi çağıran gözlemciyi besleyemez.
   function markSeenCards() {
-    // collectRoots() walks every node of every root, which is too much to spend on
-    // each 700ms tick. The results list is rendered by ONE implementation, so if the
-    // main document holds list cards they are all there; only when it holds none do
-    // we pay for the deep (shadow root + same-origin iframe) scan.
+    // collectRoots() her kökün her düğümünü dolaşır; bu her 700 ms'lik tikte harcanmak için fazla.
+    // Sonuç listesi TEK bir uygulamayla çizilir; ana belge liste kartları tutuyorsa hepsi oradadır,
+    // yalnızca hiç tutmuyorsa derin (shadow root + aynı kökenli iframe) taramanın bedelini öderiz.
     const cards = document.querySelector(LIST_CARD_SELECTOR)
       ? Array.from(document.querySelectorAll(CARD_SELECTOR))
       : deepQueryAll(CARD_SELECTOR);
@@ -1411,12 +1402,11 @@
     let resolved = 0;
     let marked = 0;
     cards.forEach((card) => {
-      if (card.closest("#jobsum-panel")) return; // never touch our own panel
-      // The new UI repeats componentkey on a nested div; badge the outermost only.
+      if (card.closest("#jobsum-panel")) return; // kendi panelimize asla dokunma
+      // Yeni arayüz componentkey'i iç içe bir div'de tekrarlar; yalnızca en dıştakine rozet koy.
       if (card.parentElement && card.parentElement.closest(CARD_SELECTOR)) return;
-      // A LIST_CARD_SELECTOR match is always a left-list card. The plain [data-job-id]
-      // shape is not: the big right-hand details pane can carry it too, so there the
-      // text length still decides.
+      // Bir LIST_CARD_SELECTOR eşleşmesi her zaman bir sol liste kartıdır. Düz [data-job-id] biçimi
+      // öyle değil: büyük sağ detay paneli de onu taşıyabilir; orada yine metin uzunluğu karar verir.
       if (!card.matches(LIST_CARD_SELECTOR) && (card.innerText || "").length > 800)
         return;
       const id = cardJobId(card);
@@ -1442,38 +1432,37 @@
   }
 
   function maybeUpdate() {
-    // Orphaned after an extension reload: stop everything and go quiet.
+    // Eklenti yeniden yüklendikten sonra yetim kaldı: her şeyi durdur ve sessizleş.
     if (!extensionAlive()) {
       teardown();
       return;
     }
-    // Off the jobs pages (feed, messaging, a profile, …) the script is inert:
-    // remove any leftover panel from a previous in-tab navigation and bail.
+    // İş sayfalarının dışında (akış, mesajlar, bir profil, …) script etkisizdir: sekme içi önceki bir
+    // gezinmeden kalan paneli kaldır ve çık.
     if (!isJobsPage()) {
       const stale = document.getElementById("jobsum-panel");
       if (stale) stale.remove();
       return;
     }
-    ensurePanel(); // re-add the panel if it was removed
-    markSeenCards(); // reflect reviewed state in the list
+    ensurePanel(); // kaldırıldıysa paneli yeniden ekle
+    markSeenCards(); // incelendi durumunu listeye yansıt
 
     const jobId = getCurrentJobId();
-    renderReviewStatus(jobId); // update the panel banner/toggle for this job
+    renderReviewStatus(jobId); // bu ilan için panel bandını/düğmesini güncelle
     if (!jobId) return;
 
-    // A letter belongs to exactly one posting. Drop the view as soon as the user
-    // moves on — before the branches below blank the header, which would leave the
-    // old letter sitting under the new job's title, ready to be copied by mistake.
-    // Keyed on coverJobId (the letter's own job), so it also covers the seen-only
-    // path below, which returns early.
+    // Bir mektup tam olarak bir ilana aittir. Kullanıcı başka ilana geçer geçmez görünümü bırak —
+    // aşağıdaki dallar başlığı boşaltmadan önce; yoksa eski mektup yeni ilanın başlığı altında,
+    // yanlışlıkla kopyalanmaya hazır dururdu. coverJobId'ye (mektubun kendi ilanı) göre anahtarlı;
+    // böylece erken dönen aşağıdaki yalnızca-görüldü yolunu da kapsar.
     if (showingCover && coverJobId && jobId !== coverJobId) exitCoverView();
 
-    // Dismissed from the list without ever being opened: the reviewed banner above is
-    // the whole story, so show nothing else and never spend a model call on it. "Yenile"
-    // still forces a real summary if the user changes their mind.
+    // Hiç açılmadan listeden kapatıldı: yukarıdaki incelendi bandı hikâyenin tamamı; başka bir şey
+    // gösterme ve buna asla bir model çağrısı harcama. Kullanıcı fikrini değiştirirse "Yenile" yine
+    // gerçek bir özeti zorlar.
     if (isSeenOnly(jobId) && !CACHE.get(jobId)) {
-      // Keyed on the job rather than on `lastJobId`, so a dismissal also replaces a
-      // "Preparing summary…" or an error left behind by the job we were already on.
+      // `lastJobId` yerine ilana göre anahtarlı; böylece bir kapatma, zaten üzerinde olduğumuz ilandan
+      // kalan bir "Özet hazırlanıyor…" ya da hata mesajının da yerini alır.
       if (seenOnlyShownFor !== jobId && !bodyLocked()) {
         seenOnlyShownFor = jobId;
         lastJobId = jobId;
@@ -1487,7 +1476,7 @@
     }
     seenOnlyShownFor = null;
 
-    // Switched to a new job: give instant feedback first.
+    // Yeni bir ilana geçildi: önce anında geri bildirim ver.
     if (jobId !== lastJobId) {
       lastJobId = jobId;
       const cached = CACHE.get(jobId);
@@ -1495,51 +1484,49 @@
         console.log(LOG, "from cache:", jobId);
         pendingJobId = null;
         lastShownDescription = cached.description;
-        renderSummary(cached.summary); // instant
+        renderSummary(cached.summary); // anında
         return;
       }
       console.log(LOG, "new job detected:", jobId);
       pendingJobId = jobId;
       pendingSince = Date.now();
-      pendingDesc = ""; // reset the stability tracker for the new job
+      pendingDesc = ""; // yeni ilan için kararlılık izleyicisini sıfırla
       pendingDescSince = Date.now();
-      setHeader("", ""); // drop the previous job's title while loading
-      showLoading(); // clear the old summary immediately
+      setHeader("", ""); // yüklenirken önceki ilanın başlığını at
+      showLoading(); // eski özeti hemen temizle
     }
 
-    // Summarize once the pending job's description has loaded.
+    // Bekleyen ilanın açıklaması yüklenince özetle.
     if (pendingJobId) {
-      // Heuristic ONLY. The old-class selectors don't match the hashed new UI's
-      // description — they instead land on the LEFT results column (filter rail or the
-      // stack of job cards), which the model summarizes to nothing OR to the wrong job.
-      // Worse, that column is static, so it trivially passed the stability gate and got
-      // sent before the real description loaded. `findLongestVisibleTextEl` skips list
-      // cards and reliably lands on the clicked job's description (both new and old UI),
-      // so trust it alone; if it finds nothing we simply wait (see the timeout below).
+      // YALNIZCA sezgisel yöntem. Eski sınıf seçicileri hash'li yeni arayüzün açıklamasıyla
+      // eşleşmiyor — onun yerine SOL sonuç sütununa (filtre çubuğu ya da ilan kartı yığını) düşüyorlar;
+      // model onu hiçe ya da YANLIŞ ilana özetliyor. Daha kötüsü, o sütun statik; kararlılık kapısından
+      // kolayca geçti ve gerçek açıklama yüklenmeden gönderildi. `findLongestVisibleTextEl` liste
+      // kartlarını atlar ve tıklanan ilanın açıklamasına güvenilir şekilde düşer (yeni ve eski arayüz);
+      // bu yüzden yalnızca ona güven; hiçbir şey bulamazsa sadece bekleriz (bkz. aşağıdaki zaman aşımı).
       let description = nonChrome(heuristicDescription());
-      // Wait for the description to SETTLE before sending: only summarize once the text
-      // has stopped changing for DESC_STABLE_MS. A brief pause mid-stream (which two
-      // consecutive equal reads would mistake for "done") no longer triggers an early
-      // send of the half-loaded stub.
+      // Göndermeden önce açıklamanın OTURMASINI bekle: yalnızca metin DESC_STABLE_MS boyunca değişmeyi
+      // bıraktıktan sonra özetle. Akışın ortasındaki kısa bir duraklama (art arda iki eşit okumanın
+      // "bitti" sanacağı) artık yarım yüklenmiş parçanın erken gönderilmesini tetiklemez.
       if (description !== pendingDesc) {
         pendingDesc = description;
-        pendingDescSince = Date.now(); // still growing — restart the settle timer
+        pendingDescSince = Date.now(); // hâlâ büyüyor — oturma zamanlayıcısını yeniden başlat
       }
       const stable =
         !!description && Date.now() - pendingDescSince >= DESC_STABLE_MS;
       if (
         stable &&
         description.length >= 40 &&
-        description !== lastShownDescription // don't summarize stale (old) text
+        description !== lastShownDescription // bayat (eski) metni özetleme
       ) {
         const targetJob = pendingJobId;
         pendingJobId = null;
         lastShownDescription = description;
         requestSummary(targetJob, description);
       } else if (Date.now() - pendingSince > DESC_LOAD_TIMEOUT_MS) {
-        // The description never became readable for this job (a layout the heuristic
-        // misses). Stop the spinner, tell the user how to retry, and dump one
-        // diagnostic so the failing DOM can be fixed from a pasted console log.
+        // Açıklama bu ilan için hiç okunabilir olmadı (sezgisel yöntemin kaçırdığı bir yerleşim). Dönen
+        // simgeyi durdur, kullanıcıya nasıl yeniden deneyeceğini söyle ve başarısız DOM yapıştırılmış bir
+        // konsol logundan düzeltilebilsin diye bir tanı dök.
         const stuckJob = pendingJobId;
         pendingJobId = null;
         console.warn(LOG, "description not found before timeout for job", stuckJob);
@@ -1549,7 +1536,7 @@
     }
   }
 
-  // --- Change detection ---
+  // --- Değişiklik algılama ---
 
   let debounceTimer = null;
   function scheduleUpdate() {
@@ -1561,11 +1548,11 @@
   observer.observe(document.documentElement, { childList: true, subtree: true });
   const pollTimer = setInterval(maybeUpdate, 700);
 
-  // Capture dismiss/undo clicks anywhere on the page.
+  // Sayfanın herhangi bir yerindeki kapatma/geri al tıklamalarını yakala.
   document.addEventListener("click", onDocClick, true);
 
-  // Dismantle this (now orphaned) instance after an extension reload so it stops
-  // polling a dead context and flooding the console.
+  // Eklenti yeniden yüklendikten sonra bu (artık yetim) örneği sök; ölü bir bağlamı yoklamayı ve
+  // konsolu doldurmayı bıraksın.
   let torndown = false;
   function teardown() {
     if (torndown) return;
@@ -1573,7 +1560,7 @@
     try {
       observer.disconnect();
     } catch (_) {
-      /* ignore */
+      /* yok say */
     }
     clearInterval(pollTimer);
     clearTimeout(debounceTimer);
@@ -1583,7 +1570,7 @@
     console.log(LOG, "extension context gone; content script stopped");
   }
 
-  reviewed.load(); // load persisted "reviewed" / "maybe" / "added" memory, then reflect it
+  reviewed.load(); // kalıcı "reviewed" / "maybe" / "added" hafızasını yükle, sonra yansıt
   maybe.load();
   added.load();
   ensurePanel();
