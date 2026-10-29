@@ -74,6 +74,7 @@
   let showingCover = false; // panel bu ilanın mektubunu gösteriyor
   let coverJobId = null; // gösterilen mektubun ait olduğu ilan (bayatlık koruması)
   let coverLang = "en"; // getirilecek mektubun dili
+  let panelPos = null; // { left, top } — kullanıcı paneli taşıdıysa; null = CSS'in varsayılan köşesi
 
   // Gövde özetten başka bir şeye aitken true. Her çizici bunu kontrol eder: LinkedIn
   // değişiklikleri maybeUpdate()'i her 700 ms'de tetikler; yoksa liste/mektup bir özetle ya da
@@ -594,6 +595,99 @@
 
   // --- Panel: <html> altına eklenir, silinirse yeniden oluşturulur ---
 
+  // --- Panelin başlığından sürükleyerek taşınması -------------------------------------
+  // Panel sık sık sıfırdan kurulur (ensurePanel); konum bu yüzden DOM'da değil `panelPos`'ta
+  // durur ve her kurulumda yeniden uygulanır. chrome.storage.local sayfa yenilemelerini aşar.
+  const PANEL_POS_KEY = "jobsum_panel_pos";
+  const PANEL_MIN_VISIBLE_TOP = 120; // taşınan panelin başlığı hep ekranda ve tutulabilir kalsın
+
+  // Konumu görünür alana kıstırıp satır içi uygula. max-height de konuma göre ayarlanır: CSS'teki
+  // calc(100vh - 96px) top=72 varsayar; aşağı taşınan panel ekran altından taşmasın, gövde kaysın.
+  function applyPanelPos(panel) {
+    if (!panel || !panelPos) return;
+    const left = Math.min(
+      Math.max(0, panelPos.left),
+      Math.max(0, window.innerWidth - panel.offsetWidth)
+    );
+    const top = Math.min(
+      Math.max(0, panelPos.top),
+      Math.max(0, window.innerHeight - PANEL_MIN_VISIBLE_TOP)
+    );
+    panelPos = { left, top };
+    panel.style.left = left + "px";
+    panel.style.top = top + "px";
+    panel.style.right = "auto";
+    panel.style.maxHeight = `calc(100vh - ${top + 8}px)`;
+  }
+
+  function loadPanelPos() {
+    try {
+      chrome.storage.local.get(PANEL_POS_KEY, (res) => {
+        if (chrome.runtime.lastError) return;
+        const v = res && res[PANEL_POS_KEY];
+        if (v && Number.isFinite(v.left) && Number.isFinite(v.top)) {
+          panelPos = { left: v.left, top: v.top };
+          applyPanelPos(document.getElementById("jobsum-panel"));
+        }
+      });
+    } catch (_) {
+      /* depolama kullanılamıyor; konum yalnızca oturum boyunca kalır */
+    }
+  }
+
+  function savePanelPos() {
+    try {
+      chrome.storage.local.set({ [PANEL_POS_KEY]: panelPos });
+    } catch (_) {
+      /* yok say */
+    }
+  }
+
+  // Başlıktan tutup sürükle. Butonlar (Ekle/Yenile/…/×) tutamaç değildir; yalnızca başlık metni ve
+  // boş başlık yüzeyi taşır. Pointer yakalama sayesinde fare hızlıca panelin dışına çıksa da takip sürer.
+  function enableDrag(panel) {
+    const header = panel.querySelector("#jobsum-header");
+    let drag = null; // { id, dx, dy } — fare ile panel köşesi arasındaki fark
+
+    header.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0 || (e.target.closest && e.target.closest("button"))) return;
+      const rect = panel.getBoundingClientRect();
+      drag = { id: e.pointerId, dx: e.clientX - rect.left, dy: e.clientY - rect.top };
+      try {
+        header.setPointerCapture(e.pointerId);
+      } catch (_) {
+        /* yok say */
+      }
+      panel.classList.add("jobsum-dragging");
+      e.preventDefault(); // metin seçimini engelle
+    });
+
+    header.addEventListener("pointermove", (e) => {
+      if (!drag || e.pointerId !== drag.id) return;
+      panelPos = { left: e.clientX - drag.dx, top: e.clientY - drag.dy };
+      applyPanelPos(panel);
+    });
+
+    function end(e) {
+      if (!drag || e.pointerId !== drag.id) return;
+      drag = null;
+      panel.classList.remove("jobsum-dragging");
+      try {
+        header.releasePointerCapture(e.pointerId);
+      } catch (_) {
+        /* yok say */
+      }
+      if (panelPos) savePanelPos();
+    }
+    header.addEventListener("pointerup", end);
+    header.addEventListener("pointercancel", end);
+  }
+
+  // Pencere küçülürse taşınmış panel ekran dışında kalmasın.
+  function onResize() {
+    applyPanelPos(document.getElementById("jobsum-panel"));
+  }
+
   function buildPanel() {
     const panel = document.createElement("div");
     panel.id = "jobsum-panel";
@@ -629,6 +723,8 @@
       .querySelector("#jobsum-maybe-list")
       .addEventListener("click", () => showList("maybe"));
     updateHeaderButtons(panel);
+    enableDrag(panel);
+    applyPanelPos(panel); // henüz belgede değil; kesin kıstırma ensurePanel'de eklendikten sonra
     return panel;
   }
 
@@ -821,6 +917,7 @@
     if (!panel) {
       panel = buildPanel();
       document.documentElement.appendChild(panel);
+      applyPanelPos(panel); // artık genişliği ölçülebilir: sağ kenardan taşmayacak şekilde kıstır
       console.log(LOG, "panel added");
       // Gövdeye hangi görünüm sahipse onu yeniden bağla. buildPanel onu kaydedilmiş HTML metninden
       // geri yükler; yani bu olmadan butonları canlı görünen ölü işaretleme olarak geri gelir —
@@ -1550,6 +1647,7 @@
 
   // Sayfanın herhangi bir yerindeki kapatma/geri al tıklamalarını yakala.
   document.addEventListener("click", onDocClick, true);
+  window.addEventListener("resize", onResize);
 
   // Eklenti yeniden yüklendikten sonra bu (artık yetim) örneği sök; ölü bir bağlamı yoklamayı ve
   // konsolu doldurmayı bıraksın.
@@ -1565,6 +1663,7 @@
     clearInterval(pollTimer);
     clearTimeout(debounceTimer);
     document.removeEventListener("click", onDocClick, true);
+    window.removeEventListener("resize", onResize);
     const panel = document.getElementById("jobsum-panel");
     if (panel) panel.remove();
     console.log(LOG, "extension context gone; content script stopped");
@@ -1573,6 +1672,7 @@
   reviewed.load(); // kalıcı "reviewed" / "maybe" / "added" hafızasını yükle, sonra yansıt
   maybe.load();
   added.load();
+  loadPanelPos();
   ensurePanel();
   scheduleUpdate();
 })();

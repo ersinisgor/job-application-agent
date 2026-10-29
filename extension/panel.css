@@ -35,6 +35,15 @@
   background: #0a66c2; /* LinkedIn mavisi */
   color: #ffffff;
   flex: 0 0 auto;
+  /* Panel buradan tutulup taşınır (content.js enableDrag); sürüklerken metin seçilmesin ve
+     dokunmatik kaydırma olayı çalmasın. Butonlar kendi cursor: pointer'ını korur. */
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+#jobsum-panel.jobsum-dragging #jobsum-header {
+  cursor: grabbing;
 }
 
 /* Pozisyon başlığı üstte, şirket altında — LinkedIn'in üst kartı gibi. */
