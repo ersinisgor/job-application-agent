@@ -237,7 +237,7 @@ basılan PDF, kullanıcının PDF'iyle 61 satırın hepsinde konum olarak ve 100
 |---|---|---|
 | Fotoğraf | 45.4pt; soldan 40.6, üstten 9.4pt | 53.5pt (679503 EMU); soldan 15.9, üstten 10.6pt |
 | Rol satırı | varsayılan 11pt, satır 0.9 | 12pt, satır 1.0 |
-| İletişim | tek satır, sağa yaslı, 8.5pt; üstte ve altta boşluk paragrafı | iki ortalı satır, 10pt: telefon \| e-posta \| konum / LinkedIn \| GitHub \| `https://ersinisgor.netlify.app`; boşluk paragrafları yok (ikinci satır 0.7 aralıklı, altındaki boşluğun yerini tutuyor) |
+| İletişim | tek satır, sağa yaslı, 8.5pt; üstte ve altta boşluk paragrafı | iki ortalı satır, 10pt: telefon \| e-posta \| konum / LinkedIn \| GitHub \| `ersinisgor.netlify.app` (köprü hedefi https://ersinisgor.netlify.app kalır); boşluk paragrafları yok (ikinci satır 0.7 aralıklı, altındaki boşluğun yerini tutuyor) |
 | 6 bölüm başlığı | 10pt | 9pt |
 
 `top[1]` (builder'ın rol satırını bulduğu paragraf) değişmedi: SUMMARY'den önceki boş olmayan
